@@ -5,26 +5,52 @@ admin.initializeApp();
 
 const db = admin.firestore();
 
-exports.onArtworkCreate = functions.firestore.document("artworks/{artworkId}")
+interface Artwork {
+    category: string,
+    title: string,
+    userName: string,
+}
+
+const mapArtwork = (doc: FirebaseFirestore.DocumentData): Artwork => ({
+  category: doc.category,
+  title: doc.title,
+  userName: doc.userName,
+});
+
+exports.onArtworkCreate = functions.firestore
+    .document("artworks/{artworkId}")
     .onCreate((snap) => {
-      const artworkId = snap.id;
-      const artwork = snap.data();
-
-      if ( !artwork.title || !artwork.userName || !artwork.category) return;
-
-      const searchKeywords = generateKeywords(artwork.title)
-          .concat(generateKeywords(artwork.userName))
-          .concat(generateKeywords(artwork.category));
-
-      const indexArtwork = {...artwork, searchKeywords: searchKeywords};
-
-      return db.collection("artworks")
-          .doc(artworkId)
-          .set(indexArtwork, {merge: true});
+      return addArtworkSearchKeywords(
+          snap.id,
+          mapArtwork(snap.data())
+      );
     });
 
+exports.onArtworkUpdate = functions.firestore
+    .document("artworks/{artworkId}")
+    .onUpdate(((change) => {
+      return addArtworkSearchKeywords(
+          change.after.id,
+          mapArtwork(change.after.data())
+      );
+    }));
+
+const addArtworkSearchKeywords = (artworkId: string, artwork: Artwork) => {
+  if (!artwork.title || !artwork.userName || !artwork.category) return;
+
+  const searchKeywords = generateKeywords(artwork.title)
+      .concat(generateKeywords(artwork.userName))
+      .concat(generateKeywords(artwork.category));
+
+  const indexArtwork = {...artwork, searchKeywords: searchKeywords};
+
+  return db.collection("artworks")
+      .doc(artworkId)
+      .set(indexArtwork, {merge: true});
+};
+
 const generateKeywords = (fieldValue: string) => {
-  const wordArr = fieldValue.toLowerCase().split(" ");
+  const wordArr = fieldValue.toLowerCase().split("artworks/{artworkId}");
   const searchableKeywords = [];
 
   let prevKey = "";
