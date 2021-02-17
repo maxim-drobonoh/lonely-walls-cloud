@@ -50,7 +50,7 @@ const addArtworkSearchKeywords = (artworkId: string, artwork: Artwork) => {
 };
 
 const generateKeywords = (fieldValue: string) => {
-  const wordArr = fieldValue.toLowerCase().split("artworks/{artworkId}");
+  const wordArr = fieldValue.toLowerCase().split(" ");
   const searchableKeywords = [];
 
   let prevKey = "";
