@@ -48,6 +48,38 @@ const mapArtwork = (
   keywords: [],
 });
 
+exports.onArtworkDelete = functions.firestore
+    .document("artworks/{artworkId}")
+    .onDelete(async (snapshot) => {
+      const deletedArtworkId = snapshot.id;
+      const artwork = mapArtwork(deletedArtworkId, snapshot.data());
+
+      const usersRef = await db.collection("users_artworks")
+          .doc(artwork.userId).get();
+
+      if (!usersRef.exists) return;
+
+      const artworksGroup = usersRef.data();
+      if (!artworksGroup) return;
+
+      const artworks : Artwork[] = [];
+
+      // @ts-ignore
+      artworksGroup.artworks.forEach((item) => {
+        const artwork = mapArtwork(item.id, item);
+        if (artwork.id !== deletedArtworkId) {
+          artworks.push(artwork);
+        }
+      });
+
+      return aggregateArtworks(
+          artworks.length > 0 ? artworks[0].price : 0,
+          artwork.userId,
+          artwork.userName,
+          artworks
+      );
+    });
+
 exports.aggregateArtworksByUser = functions.firestore
     .document("artworks/{artworkId}")
     .onWrite(async (event) => {
@@ -63,57 +95,72 @@ exports.aggregateArtworksByUser = functions.firestore
           .get();
 
       artworksSnapshot.forEach((item) => {
-        const artwork = mapArtwork(item.id, item.data());
+        functions.logger.log("item", item);
+
+        const artwork = mapArtwork(item.id, item);
         artworks.push(artwork);
       });
 
-      let minPrice = newArtwork.price;
-      let maxPrice = newArtwork.price;
-
-      let framed: boolean = false;
-      const filters: string[] = [];
-
-      const searchKeywords: Set<String> = new Set<string>();
-
-      artworks.forEach((artwork: Artwork) => {
-        if (artwork.price < minPrice) {
-          minPrice = artwork.price;
-        }
-        if (artwork.price > maxPrice) {
-          maxPrice = artwork.price;
-        }
-        if (artwork.frame) {
-          framed = true;
-        }
-
-        filters.push(artwork.orientation);
-        artwork.styles.forEach((style) => {
-          filters.push(style);
-        });
-
-        const keywords = generateKeywords(artwork.userName)
-            .concat(generateKeywords(artwork.title));
-        keywords.forEach((keyword) => {
-          searchKeywords.add(keyword);
-        });
-        artwork.keywords = Array.from(keywords);
-      });
-
-      return await db.collection("users_artworks")
-          .doc(userId)
-          .set({
-            username: newArtwork.userName,
-            artworks: artworks,
-            price: {
-              min: minPrice,
-              max: maxPrice,
-            },
-            hasFrame: framed,
-            filters: filters,
-            searchKeywords: Array.from(searchKeywords),
-          },
-          {merge: true});
+      return aggregateArtworks(
+          newArtwork.price,
+          newArtwork.userId,
+          newArtwork.userName,
+          artworks
+      );
     });
+
+const aggregateArtworks = async (
+    price: number,
+    userId : string,
+    userName: string,
+    artworks:Artwork[] ) => {
+  let framed: boolean = false;
+  const filters: string[] = [];
+
+  let minPrice = price;
+  let maxPrice = price;
+
+  const searchKeywords: Set<String> = new Set<string>();
+
+  artworks.forEach((artwork: Artwork) => {
+    if (artwork.price < minPrice) {
+      minPrice = artwork.price;
+    }
+    if (artwork.price > maxPrice) {
+      maxPrice = artwork.price;
+    }
+    if (artwork.frame) {
+      framed = true;
+    }
+
+    filters.push(artwork.orientation);
+    artwork.styles.forEach((style) => {
+      filters.push(style);
+    });
+
+    const keywords = generateKeywords(artwork.userName)
+        .concat(generateKeywords(artwork.title));
+    keywords.forEach((keyword) => {
+      searchKeywords.add(keyword);
+    });
+    artwork.keywords = Array.from(keywords);
+  });
+
+  return await db.collection("users_artworks")
+      .doc(userId)
+      .set({
+        username: userName,
+        artworks: artworks,
+        price: {
+          min: minPrice,
+          max: maxPrice,
+        },
+        hasFrame: framed,
+        filters: filters,
+        searchKeywords: Array.from(searchKeywords),
+      },
+      {merge: true});
+};
 
 const generateKeywords = (fieldValue: string) => {
   const wordArr = fieldValue.toLowerCase().split(" ");
