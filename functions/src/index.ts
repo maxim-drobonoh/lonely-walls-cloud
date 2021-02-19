@@ -35,13 +35,13 @@ const mapArtwork = (
   userName: doc.userName,
   userId: doc.userId,
   description: doc.description,
-  dimensions: doc.dimensions,
+  dimensions: doc.dimensions || [],
   edition: doc.edition,
-  images: doc.images,
+  images: doc.images || [],
   key: doc.key,
   orientation: doc.orientation,
   status: doc.status,
-  styles: doc.styles,
+  styles: doc.styles || [],
   year: doc.year,
   price: doc.price,
   frame: doc.frame,
@@ -95,9 +95,7 @@ exports.aggregateArtworksByUser = functions.firestore
           .get();
 
       artworksSnapshot.forEach((item) => {
-        functions.logger.log("item", item);
-
-        const artwork = mapArtwork(item.id, item);
+        const artwork = mapArtwork(item.id, item.data());
         artworks.push(artwork);
       });
 
@@ -132,7 +130,6 @@ const aggregateArtworks = async (
     if (artwork.frame) {
       framed = true;
     }
-
     filters.push(artwork.orientation);
     artwork.styles.forEach((style) => {
       filters.push(style);
@@ -140,6 +137,7 @@ const aggregateArtworks = async (
 
     const keywords = generateKeywords(artwork.userName)
         .concat(generateKeywords(artwork.title));
+
     keywords.forEach((keyword) => {
       searchKeywords.add(keyword);
     });
