@@ -47,3 +47,34 @@ exports.deleteArtwork= functions.firestore
         body: snap.data(),
       });
     });
+
+exports.getArtworks = functions.https.onCall(() => {
+  return client.search({
+    index: "artworks",
+    body: {
+      "size": 0,
+      "aggs": {
+        "artworks": {
+          "composite": {
+            "sources": [
+              {
+                "userId": {
+                  "terms": {
+                    "field": "userId",
+                  },
+                },
+              },
+            ],
+          },
+          "aggs": {
+            "artworks": {
+              "top_hits": {
+                "size": 10,
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+});
