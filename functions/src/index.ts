@@ -1,5 +1,5 @@
-import functions = require("firebase-functions");
-import admin = require("firebase-admin");
+import * as functions from "firebase-functions";
+import * as admin from "firebase-admin";
 const {Client} = require("@elastic/elasticsearch");
 
 admin.initializeApp();
@@ -12,6 +12,53 @@ const auth = {
 
 const client = new Client({node: env.elasticsearch.url, auth: auth});
 
+interface Artwork {
+    id: string,
+    key: string
+    category: string,
+    title: string,
+    userName: string,
+    userId: string,
+    description: string,
+    dimensions: [],
+    edition: string,
+    images: [],
+    orientation: string,
+    status: string,
+    styles: [],
+    year: string,
+    price: 100,
+    frame: boolean,
+}
+
+interface ElasticQuery {
+    collection: string,
+    query: string
+}
+
+const mapArtwork = (
+    uid: string,
+    doc: FirebaseFirestore.DocumentData
+): Artwork => ({
+  id: uid,
+  key: doc.key,
+  category: doc.category,
+  title: doc.title,
+  userName: doc.userName,
+  userId: doc.userId,
+  description: doc.description,
+  dimensions: doc.dimensions,
+  edition: doc.edition,
+  images: doc.images,
+  orientation: doc.orientation,
+  status: doc.status,
+  styles: doc.styles,
+  year: doc.year,
+  price: doc.price,
+  frame: doc.frame,
+});
+
+
 // Add Artwork
 exports.addArtwork = functions.firestore
     .document("artworks/{artworkId}")
@@ -20,7 +67,7 @@ exports.addArtwork = functions.firestore
         index: "artworks",
         type: "_doc",
         id: snap.id,
-        body: snap.data(),
+        body: mapArtwork(snap.id, snap.data()),
       });
     });
 
@@ -28,11 +75,12 @@ exports.addArtwork = functions.firestore
 exports.updateArtwork = functions.firestore
     .document("artworks/{artworkId}")
     .onUpdate(async (snap) => {
+      const {after}= snap;
       await client.index({
         index: "artworks",
         type: "_doc",
-        id: snap.after.id,
-        body: snap.after.data(),
+        id: after.id,
+        body: mapArtwork(after.id, after.data()),
       });
     });
 
@@ -40,41 +88,17 @@ exports.updateArtwork = functions.firestore
 exports.deleteArtwork= functions.firestore
     .document("artworks/{artworkId}")
     .onDelete(async (snap) => {
-      await client.index({
+      await client.delete({
         index: "artworks",
         type: "_doc",
         id: snap.id,
-        body: snap.data(),
       });
     });
 
-exports.getArtworks = functions.https.onCall(() => {
+// ElasticsSearch proxy
+exports.elasticQuery = functions.https.onCall((query: ElasticQuery) => {
   return client.search({
-    index: "artworks",
-    body: {
-      "size": 0,
-      "aggs": {
-        "artworks": {
-          "composite": {
-            "sources": [
-              {
-                "userId": {
-                  "terms": {
-                    "field": "userId",
-                  },
-                },
-              },
-            ],
-          },
-          "aggs": {
-            "artworks": {
-              "top_hits": {
-                "size": 10,
-              },
-            },
-          },
-        },
-      },
-    },
+    index: query.collection,
+    body: query.query,
   });
 });
