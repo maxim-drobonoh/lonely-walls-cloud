@@ -40,8 +40,8 @@ interface Artwork {
 }
 
 interface ElasticQuery {
-    collection: string,
-    query: string
+    collection: any,
+    query: any
 }
 
 const mapArtwork = (
@@ -106,9 +106,14 @@ exports.deleteArtwork= functions.firestore
     });
 
 // ElasticsSearch proxy
-exports.elasticQuery = functions.https.onCall((query: ElasticQuery) => {
-  return client.search({
+exports.elasticQuery = functions.https.onCall(async (query: ElasticQuery) => {
+  const {body, statusCode} = await client.search({
     index: query.collection,
     body: query.query,
   });
+  console.log(body);
+
+  return {
+    body, statusCode,
+  };
 });
