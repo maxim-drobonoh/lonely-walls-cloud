@@ -12,6 +12,12 @@ const auth = {
 
 const client = new Client({node: env.elasticsearch.url, auth: auth});
 
+interface Dimensions {
+    height: number,
+    width: number,
+    thickness: number
+}
+
 interface Artwork {
     id: string,
     key: string
@@ -20,11 +26,13 @@ interface Artwork {
     userName: string,
     userId: string,
     description: string,
-    dimensions: [],
+    dimensions: Dimensions | null,
     edition: string,
     images: [],
     orientation: string,
     status: string,
+    keywords: string[],
+    materials: string[]
     styles: [],
     year: string,
     price: 100,
@@ -52,7 +60,9 @@ const mapArtwork = (
   images: doc.images,
   orientation: doc.orientation,
   status: doc.status,
-  styles: doc.styles,
+  styles: doc.styles || [],
+  keywords: doc.keywords || [],
+  materials: doc.materials || [],
   year: doc.year,
   price: doc.price,
   frame: doc.frame,
