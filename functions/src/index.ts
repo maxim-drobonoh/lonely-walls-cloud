@@ -1,16 +1,31 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
+const createAwsElasticsearchConnector = require("aws-elasticsearch-connector");
+
 const {Client} = require("@elastic/elasticsearch");
 
 admin.initializeApp();
 
-const env = functions.config();
-const auth = {
-  username: env.elasticsearch.username,
-  password: env.elasticsearch.password,
-};
+const AWS = require("aws-sdk");
 
-const client = new Client({node: env.elasticsearch.url, auth: auth});
+AWS.config.region = "eu-central-1";
+
+//todo::use config enviroment
+AWS.config.update({
+  credentials: new AWS.Credentials(
+      "AKIARAUOI5SUFLISOO2C", "TWcEJY9c015BR4Rv5HdNMagDv93ctYQH4yR9iWki"),
+  region: "eu-central-1",
+});
+
+const client = new Client({
+  ...createAwsElasticsearchConnector(AWS.config),
+  node: "https://search-lonelywalls-dev-pfkslecr5y4bolhppcrrjbvlbe.eu-central-1.es.amazonaws.com",
+});
+
+// AKIARAUOI5SUFLISOO2C
+// TWcEJY9c015BR4Rv5HdNMagDv93ctYQH4yR9iWki
+
+// const client = new Client({node: env.elasticsearch.url, auth: auth});
 
 interface Dimensions {
     height: number,
