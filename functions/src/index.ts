@@ -7,25 +7,23 @@ const {Client} = require("@elastic/elasticsearch");
 admin.initializeApp();
 
 const AWS = require("aws-sdk");
+const env = functions.config();
+const AWS_REGION = "eu-central-1";
 
-AWS.config.region = "eu-central-1";
+AWS.config.region = AWS_REGION;
 
-//todo::use config enviroment
 AWS.config.update({
   credentials: new AWS.Credentials(
-      "AKIARAUOI5SUFLISOO2C", "TWcEJY9c015BR4Rv5HdNMagDv93ctYQH4yR9iWki"),
-  region: "eu-central-1",
+      env.elasticsearch.keyid,
+      env.elasticsearch.secretkey
+  ),
+  region: AWS_REGION,
 });
 
 const client = new Client({
   ...createAwsElasticsearchConnector(AWS.config),
-  node: "https://search-lonelywalls-dev-pfkslecr5y4bolhppcrrjbvlbe.eu-central-1.es.amazonaws.com",
+  node: env.elasticsearch.url,
 });
-
-// AKIARAUOI5SUFLISOO2C
-// TWcEJY9c015BR4Rv5HdNMagDv93ctYQH4yR9iWki
-
-// const client = new Client({node: env.elasticsearch.url, auth: auth});
 
 interface Dimensions {
     height: number,
