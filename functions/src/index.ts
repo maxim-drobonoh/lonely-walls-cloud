@@ -66,30 +66,29 @@ interface ElasticQuery {
 const mapArtwork = (
     uid: string,
     doc: FirebaseFirestore.DocumentData
-): Artwork => ({
-  id: uid,
-  key: doc.key,
-  category: doc.category,
-  title: doc.title,
-  userName: doc.userName,
-  userId: doc.userId,
-  description: doc.description,
-  dimensions: doc.dimensions,
-  edition: doc.edition,
-  images: doc.images,
-  orientation: doc.orientation,
-  status: doc.status,
-  styles: doc.styles || [],
-  keywords: doc.keywords || [],
-  materials: doc.materials || [],
-  year: doc.year,
-  price: doc.price,
-  frame: doc.frame,
-  shopify: {
-    productId: doc.productId,
-    variantsId: doc.variantsId,
-  },
-});
+): Artwork => {
+  return {
+    id: uid,
+    key: doc.key,
+    category: doc.category,
+    title: doc.title,
+    userName: doc.userName,
+    userId: doc.userId,
+    description: doc.description,
+    dimensions: doc.dimensions,
+    edition: doc.edition,
+    images: doc.images,
+    orientation: doc.orientation,
+    status: doc.status,
+    styles: doc.styles || [],
+    keywords: doc.keywords || [],
+    materials: doc.materials || [],
+    year: doc.year,
+    price: doc.price,
+    frame: doc.frame,
+    shopify: doc.shopify,
+  };
+};
 
 
 // Add Artwork
