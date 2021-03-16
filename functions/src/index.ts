@@ -50,6 +50,12 @@ interface Artwork {
     year: string,
     price: 100,
     frame: boolean,
+    shopify: Shopify
+}
+
+interface Shopify {
+    productId: number
+    variantsId: number[]
 }
 
 interface ElasticQuery {
@@ -79,6 +85,10 @@ const mapArtwork = (
   year: doc.year,
   price: doc.price,
   frame: doc.frame,
+  shopify: {
+    productId: doc.productId,
+    variantsId: doc.variantsId,
+  },
 });
 
 
