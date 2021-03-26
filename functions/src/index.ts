@@ -6,6 +6,7 @@ const {Client} = require("@elastic/elasticsearch");
 
 admin.initializeApp();
 
+const db = admin.firestore();
 const AWS = require("aws-sdk");
 const env = functions.config();
 const AWS_REGION = "eu-central-1";
@@ -90,7 +91,6 @@ const mapArtwork = (
   };
 };
 
-
 // Add Artwork
 exports.addArtwork = functions.firestore
     .document("artworks/{artworkId}")
@@ -139,3 +139,182 @@ exports.elasticQuery = functions.https.onCall(async (query: ElasticQuery) => {
     body, statusCode,
   };
 });
+
+/*
+ * Exhibition
+ * Chat
+ */
+// eslint-disable-next-line no-unused-vars
+enum ExhibitionStatus { REQUESTED = "REQUESTED", ACCEPTED = "ACCEPTED"}
+
+interface Exhibition {
+    id: string
+    createdAt: admin.firestore.Timestamp
+    editedAt: admin.firestore.Timestamp | null
+    createdBy: string
+    members: string[]
+    status: ExhibitionStatus
+    venue: {
+        venueGooglePlaceId: string
+        name: string
+        reviews: number
+        rating: number
+        type: string
+        verified: boolean
+        image: string | null
+    }
+    artist: {
+        id: string
+        fullName: string
+        artType: string | string[]
+    }
+    chatRoomId: string
+}
+
+const mapExhibition = (
+    uid: string,
+    doc: FirebaseFirestore.DocumentData
+): Exhibition => {
+  return {
+    id: uid,
+    createdBy: doc.createdBy,
+    createdAt: doc.createdAt,
+    editedAt: doc.editedAt,
+    members: doc.members,
+    status: doc.status as ExhibitionStatus,
+    chatRoomId: doc.chatRoomId,
+    venue: doc.venue,
+    artist: doc.artist,
+  };
+};
+
+export type MessageType = "request" | "message" | "review" | "waiting_details"
+
+interface Chat {
+    id: string
+    members: string[]
+    createdById: string
+    isSeen: boolean
+    createdAt: admin.firestore.Timestamp
+}
+
+
+export interface MessagePayload {
+    exhibitionId: string
+    senderId: string
+    artist: {
+        name: string
+    }
+    venue: {
+        name: string
+    }
+}
+
+export interface IMessage {
+    id: string
+    type: MessageType
+    createdAt: Date
+    isRead: boolean
+    text: string | ""
+    payload: MessagePayload | null
+}
+
+const createChatRoomRef = () => {
+  return db.collection("chatRoom").doc();
+};
+
+const createChatRoom = (
+    chat: Omit<Chat, "createdAt">,
+    chatRoomId: string
+) => {
+  return db.collection("chatRoom").doc(chatRoomId).set(chat);
+};
+
+// Create Exhibition
+exports.createExhibition = functions.firestore
+    .document("exhibitions/{exhibitionId}")
+    .onCreate(async (snap) => {
+      const exhibition = mapExhibition(
+          snap.id,
+          snap.data()
+      );
+
+      if ( exhibition.status === ExhibitionStatus.REQUESTED) {
+        const chatRoomRef = createChatRoomRef();
+        const chat = {
+          id: chatRoomRef.id,
+          createdAt: new Date(),
+          members: exhibition.members,
+          createdById: exhibition.createdBy,
+          isSeen: false,
+        };
+        await createChatRoom(chat, chatRoomRef.id);
+        const messagesRef = chatRoomRef.collection("messages").doc();
+
+        const message = <IMessage>{
+          id: messagesRef.id,
+          type: "request",
+          createdAt: new Date(),
+          isRead: false,
+          payload: {
+            senderId: exhibition.createdBy,
+            exhibitionId: exhibition.id,
+            venue: {
+              name: exhibition.venue.name,
+            },
+            artist: {
+              name: exhibition.artist.fullName,
+            },
+          },
+        };
+
+        db.collection("chatRoom")
+            .doc(chatRoomRef.id)
+            .collection("messages")
+            .doc(messagesRef.id)
+            .set(message);
+
+        db.collection("exhibitions").doc(snap.id).set(
+            {chatRoomId: chatRoomRef.id},
+            {merge: true}
+        );
+      }
+    });
+
+// Update Exhibition
+exports.updateExhibition = functions.firestore
+    .document("exhibitions/{exhibitionId}")
+    .onUpdate(async (snap) => {
+      const beforeExhibition = mapExhibition(
+          snap.before.id,
+          snap.before.data()
+      );
+      const afterExhibition = mapExhibition(
+          snap.after.id,
+          snap.after.data()
+      );
+      if ( beforeExhibition.status === afterExhibition.status) return;
+
+      if (afterExhibition.status === ExhibitionStatus.ACCEPTED) {
+        const chatRoomRef = db
+            .collection("chatRoom")
+            .doc(afterExhibition.chatRoomId);
+
+        const messagesRef = chatRoomRef.collection("messages").doc();
+
+        const message = <IMessage>{
+          id: messagesRef.id,
+          type: "waiting_details",
+          createdAt: new Date(),
+          isRead: false,
+          payload: null,
+        };
+
+        db.collection("chatRoom")
+            .doc(chatRoomRef.id)
+            .collection("messages")
+            .doc(messagesRef.id)
+            .set(message);
+      }
+    });
+
