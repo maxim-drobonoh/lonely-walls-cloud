@@ -24,6 +24,7 @@ module.exports = {
     "import",
   ],
   rules: {
-    quotes: ["error", "double"],
+    "quotes": ["error", "double"],
+    "no-unused-vars": 0,
   },
 };

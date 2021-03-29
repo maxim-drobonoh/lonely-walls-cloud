@@ -144,13 +144,26 @@ exports.elasticQuery = functions.https.onCall(async (query: ElasticQuery) => {
  * Exhibition
  * Chat
  */
-// eslint-disable-next-line no-unused-vars
-enum ExhibitionStatus { REQUESTED = "REQUESTED", ACCEPTED = "ACCEPTED"}
+enum ExhibitionStatus {
+    REQUESTED = "REQUESTED",
+    ACCEPTED = "ACCEPTED",
+    REVIEW = "REVIEW",
+    DETAILS_ACCEPTED = "DETAILS_ACCEPTED",
+    DETAILS_CHANGED = "DETAILS_CHANGED",
+    OPEN = "OPEN",
+    CLOSED = "CLOSED",
+    DECLINED = "DECLINED",
+    CANCELED = "CANCELED"
+}
 
 interface Exhibition {
     id: string
-    createdAt: admin.firestore.Timestamp
-    editedAt: admin.firestore.Timestamp | null
+    title: string | null
+    createdAt: Date
+    editedAt: Date | null
+    editedBy?: string | null
+    startDate: Date | null
+    endDate: Date | null
     createdBy: string
     members: string[]
     status: ExhibitionStatus
@@ -169,6 +182,7 @@ interface Exhibition {
         artType: string | string[]
     }
     chatRoomId: string
+    artworks: Artwork[]
 }
 
 const mapExhibition = (
@@ -177,18 +191,39 @@ const mapExhibition = (
 ): Exhibition => {
   return {
     id: uid,
+    title: doc.title || null,
     createdBy: doc.createdBy,
     createdAt: doc.createdAt,
-    editedAt: doc.editedAt,
+    editedBy: doc.editedBy || null,
+    startDate: doc.startDate || null,
+    endDate: doc.endDate || null,
+    editedAt: doc.editedAt || null,
     members: doc.members,
     status: doc.status as ExhibitionStatus,
     chatRoomId: doc.chatRoomId,
     venue: doc.venue,
     artist: doc.artist,
+    artworks: doc.artworks || [],
   };
 };
 
-export type MessageType = "request" | "message" | "review" | "waiting_details"
+export type MessageType = "message" | "action"
+
+export type MessageStatus =
+    | "requested"
+    | "request_accepted"
+    | "request_declined"
+    | "request_canceled"
+    | "request_waiting_approve"
+    | "waiting_review"
+    | "check_details"
+    | "waiting_details"
+    | "details_accepted"
+    | "waiting_opening"
+    | "open"
+    | "closed"
+    | "details_changed"
+    | "view_exhibition"
 
 interface Chat {
     id: string
@@ -198,25 +233,19 @@ interface Chat {
     createdAt: admin.firestore.Timestamp
 }
 
-
 export interface MessagePayload {
-    exhibitionId: string
-    senderId: string
-    artist: {
-        name: string
-    }
-    venue: {
-        name: string
-    }
+    senderStatus: MessageStatus
+    receiverStatus: MessageStatus
 }
 
 export interface IMessage {
     id: string
     type: MessageType
+    senderId: string
     createdAt: Date
     isRead: boolean
     text: string | ""
-    payload: MessagePayload | null
+    payload: MessagePayload
 }
 
 const createChatRoomRef = () => {
@@ -231,7 +260,7 @@ const createChatRoom = (
 };
 
 // Create Exhibition
-exports.createExhibition = functions.firestore
+exports.onCreateExhibition = functions.firestore
     .document("exhibitions/{exhibitionId}")
     .onCreate(async (snap) => {
       const exhibition = mapExhibition(
@@ -253,18 +282,13 @@ exports.createExhibition = functions.firestore
 
         const message = <IMessage>{
           id: messagesRef.id,
-          type: "request",
+          type: "action",
           createdAt: new Date(),
           isRead: false,
+          senderId: exhibition.createdBy,
           payload: {
-            senderId: exhibition.createdBy,
-            exhibitionId: exhibition.id,
-            venue: {
-              name: exhibition.venue.name,
-            },
-            artist: {
-              name: exhibition.artist.fullName,
-            },
+            senderStatus: "requested",
+            receiverStatus: "request_waiting_approve",
           },
         };
 
@@ -282,39 +306,239 @@ exports.createExhibition = functions.firestore
     });
 
 // Update Exhibition
-exports.updateExhibition = functions.firestore
+exports.onUpdateExhibition = functions.firestore
     .document("exhibitions/{exhibitionId}")
     .onUpdate(async (snap) => {
-      const beforeExhibition = mapExhibition(
-          snap.before.id,
-          snap.before.data()
-      );
       const afterExhibition = mapExhibition(
           snap.after.id,
           snap.after.data()
       );
-      if ( beforeExhibition.status === afterExhibition.status) return;
 
-      if (afterExhibition.status === ExhibitionStatus.ACCEPTED) {
-        const chatRoomRef = db
-            .collection("chatRoom")
-            .doc(afterExhibition.chatRoomId);
+      const generateMessageId = (chatRoomId: string) => db
+          .collection("chatRoom")
+          .doc(chatRoomId).collection("messages")
+          .doc();
 
-        const messagesRef = chatRoomRef.collection("messages").doc();
+      const sendMessage = (msg: IMessage) => {
+        const chatId = afterExhibition.chatRoomId;
+        const chatRoomRef = db.collection("chatRoom").doc(chatId);
 
-        const message = <IMessage>{
-          id: messagesRef.id,
-          type: "waiting_details",
-          createdAt: new Date(),
-          isRead: false,
-          payload: null,
-        };
-
-        db.collection("chatRoom")
+        return db.collection("chatRoom")
             .doc(chatRoomRef.id)
             .collection("messages")
-            .doc(messagesRef.id)
-            .set(message);
+            .doc(msg.id)
+            .set(msg);
+      };
+
+      if (afterExhibition.status === ExhibitionStatus.ACCEPTED) {
+        const messagesRef = db
+            .collection("chatRoom")
+            .doc(afterExhibition.chatRoomId)
+            .collection("messages");
+
+        const messages = await messagesRef
+            .where("payload.senderStatus", "==", "requested")
+            .where("payload.receiverStatus", "==", "request_waiting_approve")
+            .get();
+
+        messages.forEach((doc) => {
+          messagesRef.doc(doc.id).set(
+              {payload: {
+                receiverStatus: "request_accepted",
+                senderStatus: "request_accepted",
+              }},
+              {merge: true}
+          );
+        });
+
+        const message = <IMessage>{
+          id: generateMessageId(afterExhibition.chatRoomId).id,
+          type: "action",
+          createdAt: new Date(),
+          isRead: false,
+          senderId: afterExhibition.createdBy,
+          payload: {
+            senderStatus: "waiting_details",
+            receiverStatus: "waiting_details",
+          },
+        };
+
+        await sendMessage(message);
+
+        return db.collection("exhibitions").doc(afterExhibition.id).set(
+            {status: "waiting_details"},
+            {merge: true}
+        );
+      } else if ( afterExhibition.status === ExhibitionStatus.CANCELED) {
+        const messagesRef = db
+            .collection("chatRoom")
+            .doc(afterExhibition.chatRoomId)
+            .collection("messages");
+
+        const messages = await messagesRef
+            .where("payload.senderStatus", "==", "requested")
+            .where("payload.receiverStatus", "==", "request_waiting_approve")
+            .get();
+
+        messages.forEach((doc) => {
+          messagesRef.doc(doc.id).set(
+              {payload: {
+                senderStatus: "request_canceled",
+                receiverStatus: "request_canceled",
+              }},
+              {merge: true}
+          );
+        });
+      } else if ( afterExhibition.status === ExhibitionStatus.DECLINED) {
+        const messagesRef = db
+            .collection("chatRoom")
+            .doc(afterExhibition.chatRoomId)
+            .collection("messages");
+
+        const messages = await messagesRef
+            .where("payload.senderStatus", "==", "requested")
+            .where("payload.receiverStatus", "==", "request_waiting_approve")
+            .get();
+
+        messages.forEach((doc) => {
+          messagesRef.doc(doc.id).set(
+              {payload: {
+                senderStatus: "request_declined",
+                receiverStatus: "request_declined",
+              }},
+              {merge: true}
+          );
+        });
+      } else if ( afterExhibition.status === ExhibitionStatus.REVIEW) {
+        const message = <IMessage>{
+          id: generateMessageId(afterExhibition.chatRoomId).id,
+          type: "action",
+          createdAt: afterExhibition.editedAt,
+          isRead: false,
+          senderId: afterExhibition.editedBy,
+          payload: {
+            senderStatus: "waiting_review",
+            receiverStatus: "check_details",
+          },
+        };
+        return sendMessage(message);
+      } else if (afterExhibition.status === ExhibitionStatus.DETAILS_ACCEPTED) {
+        const messagesRef = db
+            .collection("chatRoom")
+            .doc(afterExhibition.chatRoomId)
+            .collection("messages");
+
+        const messages = await messagesRef
+            .where("payload.receiverStatus", "==", "check_details")
+            .get();
+
+        messages.forEach((doc) => {
+          messagesRef.doc(doc.id).set(
+              {payload: {receiverStatus: "details_accepted"}},
+              {merge: true}
+          );
+        });
+
+        const message = <IMessage>{
+          id: generateMessageId(afterExhibition.chatRoomId).id,
+          type: "action",
+          createdAt: new Date(),
+          isRead: false,
+          senderId: afterExhibition.editedBy,
+          payload: {
+            senderStatus: "waiting_opening",
+            receiverStatus: "waiting_opening",
+          },
+        };
+        return sendMessage(message);
+      } else if (afterExhibition.status === ExhibitionStatus.DETAILS_CHANGED) {
+        const messagesRef = db
+            .collection("chatRoom")
+            .doc(afterExhibition.chatRoomId)
+            .collection("messages");
+
+        const messages = await messagesRef
+            .where("payload.receiverStatus", "==", "check_details")
+            .get();
+
+        messages.forEach((doc) => {
+          messagesRef.doc(doc.id).set(
+              {payload: {receiverStatus: "details_changed"}},
+              {merge: true}
+          );
+        });
+
+        const message = <IMessage>{
+          id: generateMessageId(afterExhibition.chatRoomId).id,
+          type: "action",
+          createdAt: afterExhibition.editedAt,
+          isRead: false,
+          senderId: afterExhibition.editedBy,
+          payload: {
+            senderStatus: "waiting_review",
+            receiverStatus: "check_details",
+          },
+        };
+        return sendMessage(message);
+      } else if (afterExhibition.status === ExhibitionStatus.OPEN) {
+        const messagesRef = db
+            .collection("chatRoom")
+            .doc(afterExhibition.chatRoomId)
+            .collection("messages");
+
+        const messages = await messagesRef
+            .where("payload.receiverStatus", "==", "waiting_opening")
+            .where("payload.senderStatus", "==", "waiting_opening")
+            .get();
+
+        messages.forEach((doc) => {
+          messagesRef.doc(doc.id).set(
+              {payload: {receiverStatus: "open", senderStatus: "open"}},
+              {merge: true}
+          );
+        });
+        const message = <IMessage>{
+          id: generateMessageId(afterExhibition.chatRoomId).id,
+          type: "action",
+          createdAt: new Date(),
+          isRead: false,
+          senderId: afterExhibition.editedBy,
+          payload: {
+            senderStatus: "view_exhibition",
+            receiverStatus: "view_exhibition",
+          },
+        };
+        return sendMessage(message);
+      } else if (afterExhibition.status === ExhibitionStatus.CLOSED) {
+        const messagesRef = db
+            .collection("chatRoom")
+            .doc(afterExhibition.chatRoomId)
+            .collection("messages");
+
+        const messages = await messagesRef
+            .where("payload.receiverStatus", "==", "open")
+            .where("payload.senderStatus", "==", "open")
+            .get();
+
+        messages.forEach((doc) => {
+          messagesRef.doc(doc.id).set(
+              {payload: {receiverStatus: "close", senderStatus: "close"}},
+              {merge: true}
+          );
+        });
+        const message = <IMessage>{
+          id: generateMessageId(afterExhibition.chatRoomId).id,
+          type: "action",
+          createdAt: new Date(),
+          isRead: false,
+          senderId: afterExhibition.editedBy,
+          payload: {
+            senderStatus: "closed",
+            receiverStatus: "closed",
+          },
+        };
+        return sendMessage(message);
       }
+      return;
     });
 
