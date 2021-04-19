@@ -233,9 +233,17 @@ interface Chat {
     createdAt: admin.firestore.Timestamp
 }
 
+export interface ExhibitionDetails {
+    title: string
+    startDate: Date
+    endDate: Date,
+    artworksCount: number
+}
+
 export interface MessagePayload {
     senderStatus: MessageStatus
-    receiverStatus: MessageStatus
+    receiverStatus: MessageStatus,
+    exhibitionDetails: ExhibitionDetails
 }
 
 export interface IMessage {
@@ -289,7 +297,13 @@ exports.onCreateExhibition = functions.firestore
           payload: {
             senderStatus: "requested",
             receiverStatus: "request_waiting_approve",
-          },
+            exhibitionDetails: {
+              title: exhibition.title,
+              startDate: exhibition.startDate,
+              endDate: exhibition.endDate,
+              artworksCount: exhibition.artworks.length,
+            },
+          } as MessagePayload,
         };
 
         db.collection("chatRoom")
@@ -346,6 +360,12 @@ exports.onUpdateExhibition = functions.firestore
               {payload: {
                 receiverStatus: "request_accepted",
                 senderStatus: "request_accepted",
+                exhibitionDetails: {
+                  title: afterExhibition.title,
+                  startDate: afterExhibition.startDate,
+                  endDate: afterExhibition.endDate,
+                  artworksCount: afterExhibition.artworks.length,
+                },
               }},
               {merge: true}
           );
@@ -360,6 +380,12 @@ exports.onUpdateExhibition = functions.firestore
           payload: {
             senderStatus: "waiting_details",
             receiverStatus: "waiting_details",
+            exhibitionDetails: {
+              title: afterExhibition.title,
+              startDate: afterExhibition.startDate,
+              endDate: afterExhibition.endDate,
+              artworksCount: afterExhibition.artworks.length,
+            },
           },
         };
 
@@ -385,6 +411,12 @@ exports.onUpdateExhibition = functions.firestore
               {payload: {
                 senderStatus: "request_canceled",
                 receiverStatus: "request_canceled",
+                exhibitionDetails: {
+                  title: afterExhibition.title,
+                  startDate: afterExhibition.startDate,
+                  endDate: afterExhibition.endDate,
+                  artworksCount: afterExhibition.artworks.length,
+                },
               }},
               {merge: true}
           );
@@ -419,6 +451,12 @@ exports.onUpdateExhibition = functions.firestore
           payload: {
             senderStatus: "waiting_review",
             receiverStatus: "check_details",
+            exhibitionDetails: {
+              title: afterExhibition.title,
+              startDate: afterExhibition.startDate,
+              endDate: afterExhibition.endDate,
+              artworksCount: afterExhibition.artworks.length,
+            },
           },
         };
         return sendMessage(message);
@@ -448,6 +486,12 @@ exports.onUpdateExhibition = functions.firestore
           payload: {
             senderStatus: "waiting_opening",
             receiverStatus: "waiting_opening",
+            exhibitionDetails: {
+              title: afterExhibition.title,
+              startDate: afterExhibition.startDate,
+              endDate: afterExhibition.endDate,
+              artworksCount: afterExhibition.artworks.length,
+            },
           },
         };
         return sendMessage(message);
@@ -477,6 +521,12 @@ exports.onUpdateExhibition = functions.firestore
           payload: {
             senderStatus: "waiting_review",
             receiverStatus: "check_details",
+            exhibitionDetails: {
+              title: afterExhibition.title,
+              startDate: afterExhibition.startDate,
+              endDate: afterExhibition.endDate,
+              artworksCount: afterExhibition.artworks.length,
+            },
           },
         };
         return sendMessage(message);
@@ -506,6 +556,12 @@ exports.onUpdateExhibition = functions.firestore
           payload: {
             senderStatus: "view_exhibition",
             receiverStatus: "view_exhibition",
+            exhibitionDetails: {
+              title: afterExhibition.title,
+              startDate: afterExhibition.startDate,
+              endDate: afterExhibition.endDate,
+              artworksCount: afterExhibition.artworks.length,
+            },
           },
         };
         return sendMessage(message);
@@ -535,6 +591,12 @@ exports.onUpdateExhibition = functions.firestore
           payload: {
             senderStatus: "closed",
             receiverStatus: "closed",
+            exhibitionDetails: {
+              title: afterExhibition.title,
+              startDate: afterExhibition.startDate,
+              endDate: afterExhibition.endDate,
+              artworksCount: afterExhibition.artworks.length,
+            },
           },
         };
         return sendMessage(message);
