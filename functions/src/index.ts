@@ -630,16 +630,20 @@ exports.soldArtwork = functions.firestore
 
 
       if (artwork.status === ArtworkStatus.SOLD) {
-        const payload = {
-          notification: {
-            title: "Artwork sold",
-            body: "Tap here to check it out!",
-          },
-        };
+        const userId = artwork.userId;
 
-        await sendPushNotification("eAw3ki2sQ2y7N1xBOUSzX9:APA91bEd69s61Bc" +
-              "dRKyruUpVDOqQgyfvZx36hp4V-PD9LbBTNebZBE14nMIm7ipXzTqFB9CLeE" +
-              "pfMZUtg6fiZqcXCBb8epqxmnCF94AXf_BqJ3yiQ7nwndvkqpowXxQ" +
-              "Hkqg4kbroISt7", payload);
+        const user = await db.collection("users").doc(userId).get();
+        const fcmToken = user.data()?.fcmToken;
+
+        if (fcmToken) {
+          const payload = {
+            notification: {
+              title: "Artwork sold",
+              body: "Tap here to check it out!",
+            },
+          };
+
+          await sendPushNotification(fcmToken, payload);
+        }
       }
     });
