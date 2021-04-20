@@ -59,13 +59,6 @@ interface Shopify {
     variantsId: number[]
 }
 
-interface PushNotificationOptions {
-    notification: {
-        title: string,
-        body: string,
-    }
-}
-
 interface ElasticQuery {
     collection: any,
     query: any
@@ -97,11 +90,6 @@ const mapArtwork = (
     shopify: doc.shopify,
   };
 };
-
-const sendPushNotification =
-    async (fcmToken: string, options: PushNotificationOptions) => {
-      await admin.messaging().sendToDevice(fcmToken, options);
-    };
 
 // Add Artwork
 exports.addArtwork = functions.firestore
@@ -623,6 +611,19 @@ exports.onUpdateExhibition = functions.firestore
 
 
 // Push notification
+interface PushNotificationOptions {
+    notification: {
+        title: string,
+        body: string,
+    }
+}
+
+const sendPushNotification =
+    async (fcmToken: string, options: PushNotificationOptions) => {
+      await admin.messaging().sendToDevice(fcmToken, options);
+    };
+
+
 exports.soldArtwork = functions.firestore
     .document("artworks/{artworkId}")
     .onUpdate( async (snap) => {
