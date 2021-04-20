@@ -156,11 +156,6 @@ enum ExhibitionStatus {
     CANCELED = "CANCELED"
 }
 
-enum ArtworkStatus {
-    AVAILABLE = "Available",
-    SOLD = "Sold"
-}
-
 interface Exhibition {
     id: string
     title: string | null
@@ -618,6 +613,15 @@ interface PushNotificationOptions {
     }
 }
 
+enum NotificationTypes {
+    PURCHASE = "Purchase"
+}
+
+enum ArtworkStatus {
+    AVAILABLE = "Available",
+    SOLD = "Sold"
+}
+
 const sendPushNotification =
     async (fcmToken: string, options: PushNotificationOptions) => {
       await admin.messaging().sendToDevice(fcmToken, options);
@@ -637,14 +641,23 @@ exports.soldArtwork = functions.firestore
         const fcmToken = user.data()?.fcmToken;
 
         if (fcmToken) {
-          const payload = {
-            notification: {
-              title: "Artwork sold",
-              body: "Tap here to check it out!",
-            },
+          const notification = {
+            title: "Artwork sold",
+            body: "Tap here to check it out!",
           };
 
-          await sendPushNotification(fcmToken, payload);
+          const notificationData = {
+            ...notification,
+            userId,
+            type: NotificationTypes.PURCHASE,
+            createdDate: new Date(),
+          };
+
+          await db.collection("notifications")
+              .doc().set(notificationData);
+
+
+          await sendPushNotification(fcmToken, {notification});
         }
       }
     });
