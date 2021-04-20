@@ -59,6 +59,13 @@ interface Shopify {
     variantsId: number[]
 }
 
+interface PushNotificationOptions {
+    notification: {
+        title: string,
+        body: string,
+    }
+}
+
 interface ElasticQuery {
     collection: any,
     query: any
@@ -90,6 +97,11 @@ const mapArtwork = (
     shopify: doc.shopify,
   };
 };
+
+const sendPushNotification =
+    async (fcmToken: string, options: PushNotificationOptions) => {
+      await admin.messaging().sendToDevice(fcmToken, options);
+    };
 
 // Add Artwork
 exports.addArtwork = functions.firestore
@@ -154,6 +166,11 @@ enum ExhibitionStatus {
     CLOSED = "CLOSED",
     DECLINED = "DECLINED",
     CANCELED = "CANCELED"
+}
+
+enum ArtworkStatus {
+    AVAILABLE = "Available",
+    SOLD = "Sold"
 }
 
 interface Exhibition {
@@ -604,3 +621,25 @@ exports.onUpdateExhibition = functions.firestore
       return;
     });
 
+
+// Push notification
+exports.soldArtwork = functions.firestore
+    .document("artworks/{artworkId}")
+    .onUpdate( async (snap) => {
+      const artwork = snap.after.data();
+
+
+      if (artwork.status === ArtworkStatus.SOLD) {
+        const payload = {
+          notification: {
+            title: "Artwork sold",
+            body: "Tap here to check it out!",
+          },
+        };
+
+        await sendPushNotification("eAw3ki2sQ2y7N1xBOUSzX9:APA91bEd69s61Bc" +
+              "dRKyruUpVDOqQgyfvZx36hp4V-PD9LbBTNebZBE14nMIm7ipXzTqFB9CLeE" +
+              "pfMZUtg6fiZqcXCBb8epqxmnCF94AXf_BqJ3yiQ7nwndvkqpowXxQ" +
+              "Hkqg4kbroISt7", payload);
+      }
+    });
