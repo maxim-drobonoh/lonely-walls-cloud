@@ -625,10 +625,12 @@ enum NotificationTypes {
     PURCHASE = "Purchase"
 }
 
-enum ArtworkStatus {
-    AVAILABLE = "Available",
-    SOLD = "Sold"
-}
+// interface UserOrder {
+//     userId: string
+//     image: string
+//     artworkIds: string[]
+//     buyerName: string
+// }
 
 const sendPushNotification =
     async (fcmToken: string, options: PushNotificationSend) => {
@@ -637,37 +639,36 @@ const sendPushNotification =
 
 
 exports.soldArtwork = functions.firestore
-    .document("artworks/{artworkId}")
-    .onUpdate( async (snap) => {
-      const artwork = snap.after.data();
+    .document("orders/{userId}/orders/{orderId}")
+    .onWrite( async (snap) => {
+      const order = snap.after.data();
+      const userId = order?.userId;
 
-      if (artwork.status === ArtworkStatus.SOLD) {
-        const userId = artwork.userId;
-
+      if (userId) {
         const user = await db.collection("users").doc(userId).get();
         const fcmToken = user.data()?.fcmToken;
 
         if (fcmToken) {
-          const notification: PushNotificationSend = {
+          const sendNotification: PushNotificationSend = {
             notification: {
               title: "Artwork sold",
               body: "Tap here to check it out!",
             },
           };
 
-          const notificationData: PushNotificationSold = {
+          const notification: PushNotificationSold = {
             userId,
-            senderName: "",
-            image: artwork.images[0]?.url,
+            senderName: order?.buyerName,
+            image: order?.image,
             type: NotificationTypes.PURCHASE,
             createdDate: new Date(),
           };
 
           await db.collection("notifications")
-              .doc().set(notificationData);
+              .doc().set(notification);
 
 
-          await sendPushNotification(fcmToken, notification);
+          await sendPushNotification(fcmToken, sendNotification);
         }
       }
     });
