@@ -606,11 +606,19 @@ exports.onUpdateExhibition = functions.firestore
 
 
 // Push notification
-interface PushNotificationOptions {
+interface PushNotificationSend {
     notification: {
         title: string,
         body: string,
     }
+}
+
+interface PushNotificationSold {
+    userId: string,
+    senderName: string
+    image: string,
+    type: string,
+    createdDate: Date,
 }
 
 enum NotificationTypes {
@@ -623,7 +631,7 @@ enum ArtworkStatus {
 }
 
 const sendPushNotification =
-    async (fcmToken: string, options: PushNotificationOptions) => {
+    async (fcmToken: string, options: PushNotificationSend) => {
       await admin.messaging().sendToDevice(fcmToken, options);
     };
 
@@ -633,7 +641,6 @@ exports.soldArtwork = functions.firestore
     .onUpdate( async (snap) => {
       const artwork = snap.after.data();
 
-
       if (artwork.status === ArtworkStatus.SOLD) {
         const userId = artwork.userId;
 
@@ -641,14 +648,17 @@ exports.soldArtwork = functions.firestore
         const fcmToken = user.data()?.fcmToken;
 
         if (fcmToken) {
-          const notification = {
-            title: "Artwork sold",
-            body: "Tap here to check it out!",
+          const notification: PushNotificationSend = {
+            notification: {
+              title: "Artwork sold",
+              body: "Tap here to check it out!",
+            },
           };
 
-          const notificationData = {
-            ...notification,
+          const notificationData: PushNotificationSold = {
             userId,
+            senderName: "",
+            image: artwork.images[0]?.url,
             type: NotificationTypes.PURCHASE,
             createdDate: new Date(),
           };
@@ -657,7 +667,7 @@ exports.soldArtwork = functions.firestore
               .doc().set(notificationData);
 
 
-          await sendPushNotification(fcmToken, {notification});
+          await sendPushNotification(fcmToken, notification);
         }
       }
     });
