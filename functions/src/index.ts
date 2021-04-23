@@ -625,13 +625,6 @@ enum NotificationTypes {
     PURCHASE = "Purchase"
 }
 
-// interface UserOrder {
-//     userId: string
-//     image: string
-//     artworkIds: string[]
-//     buyerName: string
-// }
-
 const sendPushNotification =
     async (fcmToken: string, options: PushNotificationSend) => {
       await admin.messaging().sendToDevice(fcmToken, options);
@@ -642,33 +635,40 @@ exports.soldArtwork = functions.firestore
     .document("orders/{userId}/orders/{orderId}")
     .onWrite( async (snap) => {
       const order = snap.after.data();
-      const userId = order?.userId;
+      const artworks = order?.artworkIds;
 
-      if (userId) {
-        const user = await db.collection("users").doc(userId).get();
-        const fcmToken = user.data()?.fcmToken;
+      for (let i = 0; i < artworks.length; i++) {
+        const artworkId = artworks[i];
+        const artwork = await db
+            .collection("artworks")
+            .doc(artworkId)
+            .get();
 
-        if (fcmToken) {
-          const sendNotification: PushNotificationSend = {
-            notification: {
-              title: "Artwork sold",
-              body: "Tap here to check it out!",
-            },
-          };
+        const userId = artwork?.data()?.userId;
 
-          const notification: PushNotificationSold = {
-            userId,
-            senderName: order?.buyerName,
-            image: order?.image,
-            type: NotificationTypes.PURCHASE,
-            createdDate: new Date(),
-          };
+        if (userId) {
+          const user = await db.collection("users").doc(userId).get();
+          const fcmToken = user.data()?.fcmToken;
 
-          await db.collection("notifications")
-              .doc().set(notification);
+          if (fcmToken) {
+            const sendNotification: PushNotificationSend = {
+              notification: {
+                title: "Artwork sold",
+                body: "Tap here to check it out!",
+              },
+            };
 
+            const notification: PushNotificationSold = {
+              userId,
+              senderName: order?.buyerName,
+              image: order?.image,
+              type: NotificationTypes.PURCHASE,
+              createdDate: new Date(),
+            };
 
-          await sendPushNotification(fcmToken, sendNotification);
+            await sendPushNotification(fcmToken, sendNotification);
+            await db.collection("notifications").doc().set(notification);
+          }
         }
       }
     });
