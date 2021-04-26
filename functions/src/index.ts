@@ -32,6 +32,12 @@ interface Dimensions {
     thickness: number
 }
 
+interface Image {
+    width: number
+    height: number
+    url: string
+}
+
 interface Artwork {
     id: string,
     key: string
@@ -42,7 +48,7 @@ interface Artwork {
     description: string,
     dimensions: Dimensions | null,
     edition: string,
-    images: [],
+    images: Image[],
     orientation: string,
     status: string,
     keywords: string[],
@@ -168,6 +174,8 @@ interface Exhibition {
     members: string[]
     status: ExhibitionStatus
     venue: {
+        userId: string
+        title: string
         venueGooglePlaceId: string
         name: string
         reviews: number
@@ -316,6 +324,39 @@ exports.onCreateExhibition = functions.firestore
             {chatRoomId: chatRoomRef.id},
             {merge: true}
         );
+
+
+        const recipientUserId = exhibition.members
+            .find((item) => item != exhibition.createdBy);
+
+        if (recipientUserId) {
+          const recipientUser = await db
+              .collection("users")
+              .doc(recipientUserId).get();
+
+          const fcmToken = recipientUser.data()?.fcmToken;
+
+          if (fcmToken) {
+            const sendNotification: PushNotificationSend = {
+              notification: {
+                title: exhibition.venue.title,
+                body: "Wants to exhibit your artwork",
+              },
+            };
+
+            const notification: PushNotificationRequestExhibition = {
+              userId: recipientUserId,
+              senderName: exhibition.venue.title,
+              status: exhibition.status,
+              image: exhibition.artworks[0]?.images[0]?.url,
+              type: NotificationTypes.REQUEST_EXHIBITION,
+              createdDate: new Date(),
+            };
+
+            await sendPushNotification(fcmToken, sendNotification);
+            await db.collection("notifications").doc().set(notification);
+          }
+        }
       }
     });
 
@@ -390,6 +431,31 @@ exports.onUpdateExhibition = functions.firestore
         };
 
         await sendMessage(message);
+
+        const user = await db
+            .collection("users")
+            .doc(afterExhibition.createdBy).get();
+
+        const fcmToken = user.data()?.fcmToken;
+
+        if (fcmToken) {
+          const sendNotification: PushNotificationSend = {
+            notification: {
+              title: "You received a new message",
+              body: "Tap here to check it out!",
+            },
+          };
+
+          const notification: PushNotificationSold = {
+            userId: afterExhibition.createdBy,
+            // senderName: order?.buyerName,
+            // image: order?.image,
+            type: NotificationTypes.MESSAGE,
+            createdDate: new Date(),
+          };
+
+          await sendPushNotification(fcmToken, sendNotification);
+        }
 
         return db.collection("exhibitions").doc(afterExhibition.id).set(
             {status: "waiting_details"},
@@ -621,8 +687,19 @@ interface PushNotificationSold {
     createdDate: Date,
 }
 
+interface PushNotificationRequestExhibition {
+    userId: string,
+    senderName: string
+    status: ExhibitionStatus
+    image: string | null,
+    type: string,
+    createdDate: Date,
+}
+
 enum NotificationTypes {
-    PURCHASE = "Purchase"
+    PURCHASE = "Purchase",
+    REQUEST_EXHIBITION = "RequestExhibition",
+    MESSAGE = "Message"
 }
 
 const sendPushNotification =
