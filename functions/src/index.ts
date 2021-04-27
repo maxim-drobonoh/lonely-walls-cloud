@@ -364,10 +364,13 @@ exports.onCreateExhibition = functions.firestore
 exports.onUpdateExhibition = functions.firestore
     .document("exhibitions/{exhibitionId}")
     .onUpdate(async (snap) => {
-      const afterExhibition = mapExhibition(
+      const exhibition = mapExhibition(
           snap.after.id,
           snap.after.data()
       );
+
+      // const recipientUserId = exhibition.members
+      //     .find((item) => item != exhibition.createdBy);
 
       const generateMessageId = (chatRoomId: string) => db
           .collection("chatRoom")
@@ -375,7 +378,7 @@ exports.onUpdateExhibition = functions.firestore
           .doc();
 
       const sendMessage = (msg: IMessage) => {
-        const chatId = afterExhibition.chatRoomId;
+        const chatId = exhibition.chatRoomId;
         const chatRoomRef = db.collection("chatRoom").doc(chatId);
 
         return db.collection("chatRoom")
@@ -385,10 +388,45 @@ exports.onUpdateExhibition = functions.firestore
             .set(msg);
       };
 
-      if (afterExhibition.status === ExhibitionStatus.ACCEPTED) {
+      // const sendPushMessage = async (status: ExhibitionStatus) => {
+      //   if (recipientUserId) {
+      //     const recipientUser = await db.collection("users")
+      //         .doc(recipientUserId).get();
+      //
+      //     const fcmToken = recipientUser.data()?.fcmToken;
+      //
+      //     if (fcmToken) {
+      //       const sendNotification: PushNotificationSend = {
+      //         notification: {
+      //           title: "You received a new message",
+      //           body: "Tap here to check it out!",
+      //         },
+      //       };
+      //
+      //       const notification: PushNotificationMessage = {
+      //         status,
+      //         type: NotificationTypes.MESSAGE,
+      //         userId: recipientUserId,
+      //         senderName: exhibition.venue.title,
+      //         createdDate: new Date(),
+      //       };
+      //
+      //       await sendPushNotification(fcmToken, sendNotification);
+      //       await db.collection("notifications").doc().set(notification);
+      //     }
+      //
+      //     return db.collection("exhibitions").doc(exhibition.id).set(
+      //         {status: "waiting_details"},
+      //         {merge: true}
+      //     );
+      //   }
+      //   return null;
+      // };
+
+      if (exhibition.status === ExhibitionStatus.ACCEPTED) {
         const messagesRef = db
             .collection("chatRoom")
-            .doc(afterExhibition.chatRoomId)
+            .doc(exhibition.chatRoomId)
             .collection("messages");
 
         const messages = await messagesRef
@@ -402,10 +440,10 @@ exports.onUpdateExhibition = functions.firestore
                 receiverStatus: "request_accepted",
                 senderStatus: "request_accepted",
                 exhibitionDetails: {
-                  title: afterExhibition.title,
-                  startDate: afterExhibition.startDate,
-                  endDate: afterExhibition.endDate,
-                  artworksCount: afterExhibition.artworks.length,
+                  title: exhibition.title,
+                  startDate: exhibition.startDate,
+                  endDate: exhibition.endDate,
+                  artworksCount: exhibition.artworks.length,
                 },
               }},
               {merge: true}
@@ -413,58 +451,28 @@ exports.onUpdateExhibition = functions.firestore
         });
 
         const message = <IMessage>{
-          id: generateMessageId(afterExhibition.chatRoomId).id,
+          id: generateMessageId(exhibition.chatRoomId).id,
           type: "action",
           createdAt: new Date(),
           isRead: false,
-          senderId: afterExhibition.createdBy,
+          senderId: exhibition.createdBy,
           payload: {
             senderStatus: "waiting_details",
             receiverStatus: "waiting_details",
             exhibitionDetails: {
-              title: afterExhibition.title,
-              startDate: afterExhibition.startDate,
-              endDate: afterExhibition.endDate,
-              artworksCount: afterExhibition.artworks.length,
+              title: exhibition.title,
+              startDate: exhibition.startDate,
+              endDate: exhibition.endDate,
+              artworksCount: exhibition.artworks.length,
             },
           },
         };
 
         await sendMessage(message);
-
-        const user = await db
-            .collection("users")
-            .doc(afterExhibition.createdBy).get();
-
-        const fcmToken = user.data()?.fcmToken;
-
-        if (fcmToken) {
-          const sendNotification: PushNotificationSend = {
-            notification: {
-              title: "You received a new message",
-              body: "Tap here to check it out!",
-            },
-          };
-
-          const notification: PushNotificationSold = {
-            userId: afterExhibition.createdBy,
-            // senderName: order?.buyerName,
-            // image: order?.image,
-            type: NotificationTypes.MESSAGE,
-            createdDate: new Date(),
-          };
-
-          await sendPushNotification(fcmToken, sendNotification);
-        }
-
-        return db.collection("exhibitions").doc(afterExhibition.id).set(
-            {status: "waiting_details"},
-            {merge: true}
-        );
-      } else if ( afterExhibition.status === ExhibitionStatus.CANCELED) {
+      } else if ( exhibition.status === ExhibitionStatus.CANCELED) {
         const messagesRef = db
             .collection("chatRoom")
-            .doc(afterExhibition.chatRoomId)
+            .doc(exhibition.chatRoomId)
             .collection("messages");
 
         const messages = await messagesRef
@@ -478,19 +486,19 @@ exports.onUpdateExhibition = functions.firestore
                 senderStatus: "request_canceled",
                 receiverStatus: "request_canceled",
                 exhibitionDetails: {
-                  title: afterExhibition.title,
-                  startDate: afterExhibition.startDate,
-                  endDate: afterExhibition.endDate,
-                  artworksCount: afterExhibition.artworks.length,
+                  title: exhibition.title,
+                  startDate: exhibition.startDate,
+                  endDate: exhibition.endDate,
+                  artworksCount: exhibition.artworks.length,
                 },
               }},
               {merge: true}
           );
         });
-      } else if ( afterExhibition.status === ExhibitionStatus.DECLINED) {
+      } else if ( exhibition.status === ExhibitionStatus.DECLINED) {
         const messagesRef = db
             .collection("chatRoom")
-            .doc(afterExhibition.chatRoomId)
+            .doc(exhibition.chatRoomId)
             .collection("messages");
 
         const messages = await messagesRef
@@ -507,29 +515,29 @@ exports.onUpdateExhibition = functions.firestore
               {merge: true}
           );
         });
-      } else if ( afterExhibition.status === ExhibitionStatus.REVIEW) {
+      } else if ( exhibition.status === ExhibitionStatus.REVIEW) {
         const message = <IMessage>{
-          id: generateMessageId(afterExhibition.chatRoomId).id,
+          id: generateMessageId(exhibition.chatRoomId).id,
           type: "action",
-          createdAt: afterExhibition.editedAt,
+          createdAt: exhibition.editedAt,
           isRead: false,
-          senderId: afterExhibition.editedBy,
+          senderId: exhibition.editedBy,
           payload: {
             senderStatus: "waiting_review",
             receiverStatus: "check_details",
             exhibitionDetails: {
-              title: afterExhibition.title,
-              startDate: afterExhibition.startDate,
-              endDate: afterExhibition.endDate,
-              artworksCount: afterExhibition.artworks.length,
+              title: exhibition.title,
+              startDate: exhibition.startDate,
+              endDate: exhibition.endDate,
+              artworksCount: exhibition.artworks.length,
             },
           },
         };
         return sendMessage(message);
-      } else if (afterExhibition.status === ExhibitionStatus.DETAILS_ACCEPTED) {
+      } else if (exhibition.status === ExhibitionStatus.DETAILS_ACCEPTED) {
         const messagesRef = db
             .collection("chatRoom")
-            .doc(afterExhibition.chatRoomId)
+            .doc(exhibition.chatRoomId)
             .collection("messages");
 
         const messages = await messagesRef
@@ -544,27 +552,27 @@ exports.onUpdateExhibition = functions.firestore
         });
 
         const message = <IMessage>{
-          id: generateMessageId(afterExhibition.chatRoomId).id,
+          id: generateMessageId(exhibition.chatRoomId).id,
           type: "action",
           createdAt: new Date(),
           isRead: false,
-          senderId: afterExhibition.editedBy,
+          senderId: exhibition.editedBy,
           payload: {
             senderStatus: "waiting_opening",
             receiverStatus: "waiting_opening",
             exhibitionDetails: {
-              title: afterExhibition.title,
-              startDate: afterExhibition.startDate,
-              endDate: afterExhibition.endDate,
-              artworksCount: afterExhibition.artworks.length,
+              title: exhibition.title,
+              startDate: exhibition.startDate,
+              endDate: exhibition.endDate,
+              artworksCount: exhibition.artworks.length,
             },
           },
         };
         return sendMessage(message);
-      } else if (afterExhibition.status === ExhibitionStatus.DETAILS_CHANGED) {
+      } else if (exhibition.status === ExhibitionStatus.DETAILS_CHANGED) {
         const messagesRef = db
             .collection("chatRoom")
-            .doc(afterExhibition.chatRoomId)
+            .doc(exhibition.chatRoomId)
             .collection("messages");
 
         const messages = await messagesRef
@@ -579,27 +587,27 @@ exports.onUpdateExhibition = functions.firestore
         });
 
         const message = <IMessage>{
-          id: generateMessageId(afterExhibition.chatRoomId).id,
+          id: generateMessageId(exhibition.chatRoomId).id,
           type: "action",
-          createdAt: afterExhibition.editedAt,
+          createdAt: exhibition.editedAt,
           isRead: false,
-          senderId: afterExhibition.editedBy,
+          senderId: exhibition.editedBy,
           payload: {
             senderStatus: "waiting_review",
             receiverStatus: "check_details",
             exhibitionDetails: {
-              title: afterExhibition.title,
-              startDate: afterExhibition.startDate,
-              endDate: afterExhibition.endDate,
-              artworksCount: afterExhibition.artworks.length,
+              title: exhibition.title,
+              startDate: exhibition.startDate,
+              endDate: exhibition.endDate,
+              artworksCount: exhibition.artworks.length,
             },
           },
         };
         return sendMessage(message);
-      } else if (afterExhibition.status === ExhibitionStatus.OPEN) {
+      } else if (exhibition.status === ExhibitionStatus.OPEN) {
         const messagesRef = db
             .collection("chatRoom")
-            .doc(afterExhibition.chatRoomId)
+            .doc(exhibition.chatRoomId)
             .collection("messages");
 
         const messages = await messagesRef
@@ -614,27 +622,27 @@ exports.onUpdateExhibition = functions.firestore
           );
         });
         const message = <IMessage>{
-          id: generateMessageId(afterExhibition.chatRoomId).id,
+          id: generateMessageId(exhibition.chatRoomId).id,
           type: "action",
           createdAt: new Date(),
           isRead: false,
-          senderId: afterExhibition.editedBy,
+          senderId: exhibition.editedBy,
           payload: {
             senderStatus: "view_exhibition",
             receiverStatus: "view_exhibition",
             exhibitionDetails: {
-              title: afterExhibition.title,
-              startDate: afterExhibition.startDate,
-              endDate: afterExhibition.endDate,
-              artworksCount: afterExhibition.artworks.length,
+              title: exhibition.title,
+              startDate: exhibition.startDate,
+              endDate: exhibition.endDate,
+              artworksCount: exhibition.artworks.length,
             },
           },
         };
         return sendMessage(message);
-      } else if (afterExhibition.status === ExhibitionStatus.CLOSED) {
+      } else if (exhibition.status === ExhibitionStatus.CLOSED) {
         const messagesRef = db
             .collection("chatRoom")
-            .doc(afterExhibition.chatRoomId)
+            .doc(exhibition.chatRoomId)
             .collection("messages");
 
         const messages = await messagesRef
@@ -649,19 +657,19 @@ exports.onUpdateExhibition = functions.firestore
           );
         });
         const message = <IMessage>{
-          id: generateMessageId(afterExhibition.chatRoomId).id,
+          id: generateMessageId(exhibition.chatRoomId).id,
           type: "action",
           createdAt: new Date(),
           isRead: false,
-          senderId: afterExhibition.editedBy,
+          senderId: exhibition.editedBy,
           payload: {
             senderStatus: "closed",
             receiverStatus: "closed",
             exhibitionDetails: {
-              title: afterExhibition.title,
-              startDate: afterExhibition.startDate,
-              endDate: afterExhibition.endDate,
-              artworksCount: afterExhibition.artworks.length,
+              title: exhibition.title,
+              startDate: exhibition.startDate,
+              endDate: exhibition.endDate,
+              artworksCount: exhibition.artworks.length,
             },
           },
         };
@@ -686,6 +694,14 @@ interface PushNotificationSold {
     type: string,
     createdDate: Date,
 }
+
+// interface PushNotificationMessage {
+//     status: ExhibitionStatus,
+//     userId: string,
+//     senderName: string
+//     type: string,
+//     createdDate: Date,
+// }
 
 interface PushNotificationRequestExhibition {
     userId: string,
