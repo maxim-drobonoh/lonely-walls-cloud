@@ -369,8 +369,8 @@ exports.onUpdateExhibition = functions.firestore
           snap.after.data()
       );
 
-      const recipientUserId = exhibition.members
-          .find((item) => item != exhibition.createdBy);
+      // const recipientUserId = exhibition.members
+      //     .find((item) => item != exhibition.createdBy);
 
       const generateMessageId = (chatRoomId: string) => db
           .collection("chatRoom")
@@ -388,40 +388,40 @@ exports.onUpdateExhibition = functions.firestore
             .set(msg);
       };
 
-      const sendPushMessage = async (status: ExhibitionStatus) => {
-        if (recipientUserId) {
-          const recipientUser = await db.collection("users")
-              .doc(recipientUserId).get();
-
-          const fcmToken = recipientUser.data()?.fcmToken;
-
-          if (fcmToken) {
-            const sendNotification: PushNotificationSend = {
-              notification: {
-                title: "You received a new message",
-                body: "Tap here to check it out!",
-              },
-            };
-
-            const notification: PushNotificationChangeStatusExhibition = {
-              status,
-              type: NotificationTypes.MESSAGE,
-              userId: recipientUserId,
-              senderName: exhibition.venue.title,
-              createdDate: new Date(),
-            };
-
-            await sendPushNotification(fcmToken, sendNotification);
-            await db.collection("notifications").doc().set(notification);
-          }
-
-          return db.collection("exhibitions").doc(exhibition.id).set(
-              {status: "waiting_details"},
-              {merge: true}
-          );
-        }
-        return null;
-      };
+      // const sendPushMessage = async (status: ExhibitionStatus) => {
+      //   if (recipientUserId) {
+      //     const recipientUser = await db.collection("users")
+      //         .doc(recipientUserId).get();
+      //
+      //     const fcmToken = recipientUser.data()?.fcmToken;
+      //
+      //     if (fcmToken) {
+      //       const sendNotification: PushNotificationSend = {
+      //         notification: {
+      //           title: "You received a new message",
+      //           body: "Tap here to check it out!",
+      //         },
+      //       };
+      //
+      //       const notification: PushNotificationChangeStatusExhibition = {
+      //         status,
+      //         type: NotificationTypes.MESSAGE,
+      //         userId: recipientUserId,
+      //         senderName: exhibition.venue.title,
+      //         createdDate: new Date(),
+      //       };
+      //
+      //       await sendPushNotification(fcmToken, sendNotification);
+      //       await db.collection("notifications").doc().set(notification);
+      //     }
+      //
+      //     return db.collection("exhibitions").doc(exhibition.id).set(
+      //         {status: "waiting_details"},
+      //         {merge: true}
+      //     );
+      //   }
+      //   return null;
+      // };
 
       if (exhibition.status === ExhibitionStatus.ACCEPTED) {
         const messagesRef = db
@@ -469,7 +469,7 @@ exports.onUpdateExhibition = functions.firestore
         };
 
         await sendMessage(message);
-        await sendPushMessage(exhibition.status);
+        // await sendPushMessage(exhibition.status);
       } else if ( exhibition.status === ExhibitionStatus.CANCELED) {
         const messagesRef = db
             .collection("chatRoom")
@@ -496,7 +496,7 @@ exports.onUpdateExhibition = functions.firestore
               {merge: true}
           );
         });
-        await sendPushMessage(exhibition.status);
+        // await sendPushMessage(exhibition.status);
       } else if ( exhibition.status === ExhibitionStatus.DECLINED) {
         const messagesRef = db
             .collection("chatRoom")
@@ -517,7 +517,7 @@ exports.onUpdateExhibition = functions.firestore
               {merge: true}
           );
         });
-        await sendPushMessage(exhibition.status);
+        // await sendPushMessage(exhibition.status);
       } else if ( exhibition.status === ExhibitionStatus.REVIEW) {
         const message = <IMessage>{
           id: generateMessageId(exhibition.chatRoomId).id,
@@ -706,9 +706,9 @@ interface PushNotificationRequestExhibition extends PushNotification{
     image: string | null
 }
 
-interface PushNotificationChangeStatusExhibition extends PushNotification {
-    status: ExhibitionStatus,
-}
+// interface PushNotificationChangeStatusExhibition extends PushNotification {
+//     status: ExhibitionStatus,
+// }
 
 
 enum NotificationTypes {
@@ -722,7 +722,7 @@ const sendPushNotification =
       await admin.messaging().sendToDevice(fcmToken, options);
     };
 
-
+// Push sold artwork
 exports.soldArtwork = functions.firestore
     .document("orders/{userId}/orders/{orderId}")
     .onWrite( async (snap) => {
@@ -764,3 +764,10 @@ exports.soldArtwork = functions.firestore
         }
       }
     });
+
+// Push new message
+// exports.onNewMessage = functions.firestore
+//     .document("chatRoom/{chatRoomId}/messages/{messageId}")
+//     .onUpdate(async (snap) => {
+//         const messages = snap.after.data()
+//     }
