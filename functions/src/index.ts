@@ -345,10 +345,10 @@ exports.onCreateExhibition = functions.firestore
             };
 
             const notification: PushNotificationRequestExhibition = {
-              userId: recipientUserId,
-              senderName: exhibition.venue.title,
               status: exhibition.status,
               image: exhibition.artworks[0]?.images[0]?.url,
+              userId: recipientUserId,
+              senderName: exhibition.venue.title,
               type: NotificationTypes.REQUEST_EXHIBITION,
               createdDate: new Date(),
             };
@@ -369,8 +369,8 @@ exports.onUpdateExhibition = functions.firestore
           snap.after.data()
       );
 
-      // const recipientUserId = exhibition.members
-      //     .find((item) => item != exhibition.createdBy);
+      const recipientUserId = exhibition.members
+          .find((item) => item != exhibition.createdBy);
 
       const generateMessageId = (chatRoomId: string) => db
           .collection("chatRoom")
@@ -388,40 +388,40 @@ exports.onUpdateExhibition = functions.firestore
             .set(msg);
       };
 
-      // const sendPushMessage = async (status: ExhibitionStatus) => {
-      //   if (recipientUserId) {
-      //     const recipientUser = await db.collection("users")
-      //         .doc(recipientUserId).get();
-      //
-      //     const fcmToken = recipientUser.data()?.fcmToken;
-      //
-      //     if (fcmToken) {
-      //       const sendNotification: PushNotificationSend = {
-      //         notification: {
-      //           title: "You received a new message",
-      //           body: "Tap here to check it out!",
-      //         },
-      //       };
-      //
-      //       const notification: PushNotificationMessage = {
-      //         status,
-      //         type: NotificationTypes.MESSAGE,
-      //         userId: recipientUserId,
-      //         senderName: exhibition.venue.title,
-      //         createdDate: new Date(),
-      //       };
-      //
-      //       await sendPushNotification(fcmToken, sendNotification);
-      //       await db.collection("notifications").doc().set(notification);
-      //     }
-      //
-      //     return db.collection("exhibitions").doc(exhibition.id).set(
-      //         {status: "waiting_details"},
-      //         {merge: true}
-      //     );
-      //   }
-      //   return null;
-      // };
+      const sendPushMessage = async (status: ExhibitionStatus) => {
+        if (recipientUserId) {
+          const recipientUser = await db.collection("users")
+              .doc(recipientUserId).get();
+
+          const fcmToken = recipientUser.data()?.fcmToken;
+
+          if (fcmToken) {
+            const sendNotification: PushNotificationSend = {
+              notification: {
+                title: "You received a new message",
+                body: "Tap here to check it out!",
+              },
+            };
+
+            const notification: PushNotificationChangeStatusExhibition = {
+              status,
+              type: NotificationTypes.MESSAGE,
+              userId: recipientUserId,
+              senderName: exhibition.venue.title,
+              createdDate: new Date(),
+            };
+
+            await sendPushNotification(fcmToken, sendNotification);
+            await db.collection("notifications").doc().set(notification);
+          }
+
+          return db.collection("exhibitions").doc(exhibition.id).set(
+              {status: "waiting_details"},
+              {merge: true}
+          );
+        }
+        return null;
+      };
 
       if (exhibition.status === ExhibitionStatus.ACCEPTED) {
         const messagesRef = db
@@ -469,6 +469,7 @@ exports.onUpdateExhibition = functions.firestore
         };
 
         await sendMessage(message);
+        await sendPushMessage(exhibition.status);
       } else if ( exhibition.status === ExhibitionStatus.CANCELED) {
         const messagesRef = db
             .collection("chatRoom")
@@ -687,30 +688,26 @@ interface PushNotificationSend {
     }
 }
 
-interface PushNotificationSold {
+interface PushNotification {
     userId: string,
     senderName: string
-    image: string,
-    type: string,
-    createdDate: Date,
+    type: string
+    createdDate: Date
 }
 
-// interface PushNotificationMessage {
-//     status: ExhibitionStatus,
-//     userId: string,
-//     senderName: string
-//     type: string,
-//     createdDate: Date,
-// }
+interface PushNotificationSold extends PushNotification {
+    image: string
+}
 
-interface PushNotificationRequestExhibition {
-    userId: string,
-    senderName: string
+interface PushNotificationRequestExhibition extends PushNotification{
     status: ExhibitionStatus
-    image: string | null,
-    type: string,
-    createdDate: Date,
+    image: string | null
 }
+
+interface PushNotificationChangeStatusExhibition extends PushNotification {
+    status: ExhibitionStatus,
+}
+
 
 enum NotificationTypes {
     PURCHASE = "Purchase",
