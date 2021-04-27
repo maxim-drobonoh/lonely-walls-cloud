@@ -496,6 +496,7 @@ exports.onUpdateExhibition = functions.firestore
               {merge: true}
           );
         });
+        await sendPushMessage(exhibition.status);
       } else if ( exhibition.status === ExhibitionStatus.DECLINED) {
         const messagesRef = db
             .collection("chatRoom")
@@ -516,6 +517,7 @@ exports.onUpdateExhibition = functions.firestore
               {merge: true}
           );
         });
+        await sendPushMessage(exhibition.status);
       } else if ( exhibition.status === ExhibitionStatus.REVIEW) {
         const message = <IMessage>{
           id: generateMessageId(exhibition.chatRoomId).id,
