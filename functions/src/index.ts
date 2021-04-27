@@ -26,6 +26,13 @@ const client = new Client({
   node: env.elasticsearch.url,
 });
 
+enum Roles {
+    COLLECTOR = "Collector",
+    ARTIST = "Artist",
+    VENUE_MANAGER = "VenueManager",
+    GUEST = "Guest"
+}
+
 interface Dimensions {
     height: number,
     width: number,
@@ -287,6 +294,7 @@ exports.onCreateExhibition = functions.firestore
       if ( exhibition.status === ExhibitionStatus.REQUESTED) {
         const chatRoomRef = createChatRoomRef();
         const chat = {
+          exhibitionId: exhibition.id,
           id: chatRoomRef.id,
           createdAt: new Date(),
           members: exhibition.members,
@@ -706,6 +714,10 @@ interface PushNotificationRequestExhibition extends PushNotification{
     image: string | null
 }
 
+// interface PushNotificationNewMessage extends PushNotification {
+//     message: string
+// }
+
 // interface PushNotificationChangeStatusExhibition extends PushNotification {
 //     status: ExhibitionStatus,
 // }
@@ -766,8 +778,61 @@ exports.soldArtwork = functions.firestore
     });
 
 // Push new message
-// exports.onNewMessage = functions.firestore
-//     .document("chatRoom/{chatRoomId}/messages/{messageId}")
-//     .onUpdate(async (snap) => {
-//         const messages = snap.after.data()
-//     }
+exports.onNewMessage = functions.firestore
+    .document("chatRoom/{chatRoomId}/messages/{messageId}")
+    .onCreate(async (snap, context) => {
+      const message = snap.data();
+      const senderId = message.senderId;
+      const chatRoomId = context.params.chatRoomId;
+
+      const chatRoomRef = await db.collection("chatRoom").doc(chatRoomId).get();
+      const chatRoom = chatRoomRef.data();
+      const exhibitionId = chatRoom?.exhibitionId;
+
+      const exhibitionRef = await db.collection("exhibitions")
+          .doc(exhibitionId).get();
+      const exhibition = exhibitionRef.data();
+
+      const mapSenderName = (user: any) => {
+        if (user.role === Roles.ARTIST) {
+          return `${user.firstName} ${user.lastName}`;
+        }
+        if (user.role === Roles.VENUE_MANAGER) {
+          return exhibition?.venue.title;
+        }
+        return "";
+      };
+
+      const recipientUserId = exhibition?.members
+          .find((item: string) => item !== senderId);
+      const recipientUserRef = await db.collection("users")
+          .doc(recipientUserId).get();
+      const recipientUser = recipientUserRef.data();
+
+      if (recipientUser) {
+        const senderUserRef = await db.collection("users")
+            .doc(senderId).get();
+        const senderUser = senderUserRef.data();
+
+        const fcmToken = recipientUser?.fcmToken;
+
+        if (fcmToken) {
+          const sendNotification: PushNotificationSend = {
+            notification: {
+              title: "You received a new message",
+              body: "Tap here to check it out!",
+            },
+          };
+
+          const notification: PushNotification = {
+            type: NotificationTypes.MESSAGE,
+            userId: recipientUserId,
+            senderName: mapSenderName(senderUser),
+            createdDate: new Date(),
+          };
+
+          await sendPushNotification(fcmToken, sendNotification);
+          await db.collection("notifications").doc().set(notification);
+        }
+      }
+    });
