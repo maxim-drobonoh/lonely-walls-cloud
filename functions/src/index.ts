@@ -692,9 +692,13 @@ exports.onUpdateExhibition = functions.firestore
 
 // Push notification
 interface PushNotificationSend {
+    data?: {
+      routeName: string
+    },
     notification: {
         title: string,
         body: string,
+        routeName?: string
     }
 }
 
@@ -818,6 +822,9 @@ exports.onNewMessage = functions.firestore
 
         if (fcmToken) {
           const sendNotification: PushNotificationSend = {
+            data: {
+              routeName: "Chat",
+            },
             notification: {
               title: "You received a new message",
               body: "Tap here to check it out!",
