@@ -48,23 +48,24 @@ interface Image {
 interface Artwork {
     id: string,
     key: string
-    category: string,
     title: string,
-    userName: string,
-    userId: string,
     description: string,
-    dimensions: Dimensions | null,
-    edition: string,
-    images: Image[],
-    orientation: string,
-    status: string,
-    keywords: string[],
-    materials: string[]
-    styles: [],
+    category: string,
     year: string,
-    price: 100,
+    dimensions: Dimensions | null,
+    materials: string[]
+    styles: string[],
+    keywords: string[],
+    edition: string,
+    status: string,
     frame: boolean,
+    price: number,
+    userName: string,
+    orientation: string,
+    userId: string,
     shopify: Shopify
+    images: Image[],
+    venue?: Venue
 }
 
 interface Shopify {
@@ -75,6 +76,24 @@ interface Shopify {
 interface ElasticQuery {
     collection: any,
     query: any
+}
+
+interface Venue {
+    userId: string
+    title: string
+    venueGooglePlaceId: string
+    name: string
+    reviews: number
+    rating: number
+    type: string
+    verified: boolean
+    image: string | null
+}
+
+enum ArtworkStatus {
+    AVAILABLE = "Available",
+    SOLD = "Sold",
+    EXHIBITED = "Exhibited"
 }
 
 const mapArtwork = (
@@ -101,6 +120,7 @@ const mapArtwork = (
     price: doc.price,
     frame: doc.frame,
     shopify: doc.shopify,
+    venue: doc.venue,
   };
 };
 
@@ -180,17 +200,7 @@ interface Exhibition {
     createdBy: string
     members: string[]
     status: ExhibitionStatus
-    venue: {
-        userId: string
-        title: string
-        venueGooglePlaceId: string
-        name: string
-        reviews: number
-        rating: number
-        type: string
-        verified: boolean
-        image: string | null
-    }
+    venue: Venue
     artist: {
         id: string
         fullName: string
@@ -631,6 +641,17 @@ exports.onUpdateExhibition = functions.firestore
         await sendPushMessage();
         return sendMessage(message);
       } else if (status === ExhibitionStatus.OPEN) {
+        for (let i = 0; i < exhibition.artworks.length; i++) {
+          const artwork = exhibition.artworks[i];
+
+          if (artwork?.id) {
+            await db.collection("artworks").doc(artwork.id).update({
+              status: ArtworkStatus.EXHIBITED,
+              venue: exhibition.venue,
+            });
+          }
+        }
+
         const messagesRef = db
             .collection("chatRoom")
             .doc(exhibition.chatRoomId)
