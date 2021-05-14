@@ -77,6 +77,12 @@ interface ElasticQuery {
     query: any
 }
 
+enum ArtworkStatus {
+    AVAILABLE = "Available",
+    SOLD = "Sold",
+    EXHIBITED = "Exhibited"
+}
+
 const mapArtwork = (
     uid: string,
     doc: FirebaseFirestore.DocumentData
@@ -631,6 +637,16 @@ exports.onUpdateExhibition = functions.firestore
         await sendPushMessage();
         return sendMessage(message);
       } else if (status === ExhibitionStatus.OPEN) {
+        for (let i = 0; i < exhibition.artworks.length; i++) {
+          const artwork = exhibition.artworks[i];
+
+          if (artwork?.id) {
+            await db.collection("artworks").doc(artwork.id).update({
+              status: ArtworkStatus.EXHIBITED,
+            });
+          }
+        }
+
         const messagesRef = db
             .collection("chatRoom")
             .doc(exhibition.chatRoomId)
