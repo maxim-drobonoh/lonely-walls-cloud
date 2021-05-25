@@ -277,7 +277,7 @@ export interface IMessage {
     senderId: string
     createdAt: Date
     isRead: boolean
-    text: string | ""
+    text: string
     payload: MessagePayload
 }
 
@@ -367,11 +367,12 @@ exports.onCreateExhibition = functions.firestore
 
             const notification: PushNotificationRequestExhibition = {
               status: exhibition.status,
-              image: exhibition.artworks[0]?.images[0]?.url,
+              image: exhibition.artworks[0]?.images[0]?.url || null,
               userId: recipientUserId,
               senderName: exhibition.venue.title,
               type: NotificationTypes.REQUEST_EXHIBITION,
               createdDate: new Date(),
+              isSeen: false,
             };
 
             await sendPushNotification(fcmToken, sendNotification);
@@ -428,6 +429,7 @@ exports.onUpdateExhibition = functions.firestore
 
       const sendPushMessage = async () => {
         // Артист принял запрос, отправить уведомление Венью
+        // Венью принял запрос, отправить уведомление Артист
         if (recipientUserId) {
           const sendNotification: PushNotificationSend = {
             notification: {
@@ -442,6 +444,7 @@ exports.onUpdateExhibition = functions.firestore
             userId: createdBy,
             senderName: mapSenderName(recipientUser?.data()),
             createdDate: new Date(),
+            isSeen: false,
           };
 
           await sendPushNotification(senderUserFcmToken, sendNotification);
@@ -743,6 +746,7 @@ interface PushNotification {
     senderName: string
     type: string
     createdDate: Date
+    isSeen: boolean
 }
 
 interface PushNotificationSold extends PushNotification {
@@ -803,6 +807,7 @@ exports.soldArtwork = functions.firestore
               image: order?.image,
               type: NotificationTypes.PURCHASE,
               createdDate: new Date(),
+              isSeen: false,
             };
 
             await sendPushNotification(fcmToken, sendNotification);
@@ -868,6 +873,7 @@ exports.onNewMessage = functions.firestore
               userId: recipientUserId,
               senderName: mapSenderName(senderUser),
               createdDate: new Date(),
+              isSeen: false,
             };
 
             await sendPushNotification(fcmToken, sendNotification);
