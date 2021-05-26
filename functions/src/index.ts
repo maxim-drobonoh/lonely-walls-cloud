@@ -392,14 +392,17 @@ exports.onUpdateExhibition = functions.firestore
       );
 
       const {status, members, createdBy} = exhibition;
-      const recipientUserId = members
-          .find((item) => item != createdBy);
-      const recipientUser = recipientUserId ? await db.collection("users")
-          .doc(recipientUserId).get() : null;
 
-      const senderUser = await db.collection("users")
+      const receiverUserId = members
+          .find((item) => item != createdBy);
+
+      const receiverUser = receiverUserId ? await db.collection("users")
+          .doc(receiverUserId).get() : null;
+      const creatorUser = await db.collection("users")
           .doc(createdBy).get();
-      const senderUserFcmToken = senderUser?.data()?.fcmToken;
+
+      const _receiverUser = receiverUser?.data();
+      const _creatorUser = creatorUser?.data();
 
       const generateMessageId = (chatRoomId: string) => db
           .collection("chatRoom")
@@ -417,6 +420,13 @@ exports.onUpdateExhibition = functions.firestore
             .set(msg);
       };
 
+      const mapSenderUser = (userId: string) => {
+        if (_receiverUser?.userId === userId) {
+          return _receiverUser;
+        }
+        return _creatorUser;
+      };
+
       const mapSenderName = (user: any) => {
         if (user.role === Roles.ARTIST) {
           return `${user.firstName} ${user.lastName}`;
@@ -427,30 +437,33 @@ exports.onUpdateExhibition = functions.firestore
         return "";
       };
 
-      const sendPushMessage = async () => {
+      const sendPushMessage = async (
+          senderUser: any,
+          recepientUser: any
+      ) => {
         // Артист принял запрос, отправить уведомление Венью
         // Венью принял запрос, отправить уведомление Артист
-        if (recipientUserId) {
-          const sendNotification: PushNotificationSend = {
-            notification: {
-              title: "You received a new message",
-              body: "Tap here to check it out!",
-            },
-          };
+        // if (_receiverUserId) {
+        const sendNotification: PushNotificationSend = {
+          notification: {
+            title: "You received a new message",
+            body: "Tap here to check it out!",
+          },
+        };
 
-          const notification: PushNotificationChangeStatusExhibition = {
-            status: status,
-            type: NotificationTypes.MESSAGE,
-            userId: createdBy,
-            senderName: mapSenderName(recipientUser?.data()),
-            createdDate: new Date(),
-            isSeen: false,
-          };
+        const notification: PushNotificationChangeStatusExhibition = {
+          status: status,
+          type: NotificationTypes.MESSAGE,
+          userId: recepientUser.userId,
+          senderName: mapSenderName(senderUser),
+          createdDate: new Date(),
+          isSeen: false,
+        };
 
-          await sendPushNotification(senderUserFcmToken, sendNotification);
-          await db.collection("notifications").doc().set(notification);
-        }
-        return null;
+        await sendPushNotification(recepientUser.fcmToken, sendNotification);
+        await db.collection("notifications").doc().set(notification);
+        // }
+        // return null;
       };
 
       if (status === ExhibitionStatus.ACCEPTED) {
@@ -499,7 +512,7 @@ exports.onUpdateExhibition = functions.firestore
         };
 
         await sendMessage(message);
-        await sendPushMessage();
+        await sendPushMessage(_receiverUser, _creatorUser);
       } else if ( status === ExhibitionStatus.CANCELED) {
         const messagesRef = db
             .collection("chatRoom")
@@ -526,8 +539,7 @@ exports.onUpdateExhibition = functions.firestore
               {merge: true}
           );
         });
-
-        await sendPushMessage();
+        await sendPushMessage(_creatorUser, _receiverUser);
       } else if ( status === ExhibitionStatus.DECLINED) {
         const messagesRef = db
             .collection("chatRoom")
@@ -549,28 +561,36 @@ exports.onUpdateExhibition = functions.firestore
           );
         });
 
-        await sendPushMessage();
+        await sendPushMessage(_receiverUser, _creatorUser);
       } else if ( status === ExhibitionStatus.REVIEW) {
-        const message = <IMessage>{
-          id: generateMessageId(exhibition.chatRoomId).id,
-          type: "action",
-          createdAt: exhibition.editedAt,
-          isRead: false,
-          senderId: exhibition.editedBy,
-          payload: {
-            senderStatus: "waiting_review",
-            receiverStatus: "check_details",
-            exhibitionDetails: {
-              title: exhibition.title,
-              startDate: exhibition.startDate,
-              endDate: exhibition.endDate,
-              artworksCount: exhibition.artworks.length,
+        if (exhibition.editedBy) {
+          const message = <IMessage>{
+            id: generateMessageId(exhibition.chatRoomId).id,
+            type: "action",
+            createdAt: exhibition.editedAt,
+            isRead: false,
+            senderId: exhibition.editedBy,
+            payload: {
+              senderStatus: "waiting_review",
+              receiverStatus: "check_details",
+              exhibitionDetails: {
+                title: exhibition.title,
+                startDate: exhibition.startDate,
+                endDate: exhibition.endDate,
+                artworksCount: exhibition.artworks.length,
+              },
             },
-          },
-        };
+          };
 
-        await sendPushMessage();
-        return sendMessage(message);
+          const receiver = members.find((item) => item !== exhibition.editedBy);
+
+          if (receiver) {
+            await sendPushMessage(
+                mapSenderUser(exhibition.editedBy), mapSenderUser(receiver)
+            );
+            return sendMessage(message);
+          }
+        }
       } else if (status === ExhibitionStatus.DETAILS_ACCEPTED) {
         const messagesRef = db
             .collection("chatRoom")
@@ -588,61 +608,79 @@ exports.onUpdateExhibition = functions.firestore
           );
         });
 
-        const message = <IMessage>{
-          id: generateMessageId(exhibition.chatRoomId).id,
-          type: "action",
-          createdAt: new Date(),
-          isRead: false,
-          senderId: exhibition.editedBy,
-          payload: {
-            senderStatus: "waiting_opening",
-            receiverStatus: "waiting_opening",
-            exhibitionDetails: {
-              title: exhibition.title,
-              startDate: exhibition.startDate,
-              endDate: exhibition.endDate,
-              artworksCount: exhibition.artworks.length,
+        if (exhibition.editedBy) {
+          const message = <IMessage>{
+            id: generateMessageId(exhibition.chatRoomId).id,
+            type: "action",
+            createdAt: new Date(),
+            isRead: false,
+            senderId: exhibition.editedBy,
+            payload: {
+              senderStatus: "waiting_opening",
+              receiverStatus: "waiting_opening",
+              exhibitionDetails: {
+                title: exhibition.title,
+                startDate: exhibition.startDate,
+                endDate: exhibition.endDate,
+                artworksCount: exhibition.artworks.length,
+              },
             },
-          },
-        };
-        return sendMessage(message);
+          };
+
+          const receiver = members.find((item) => item !== exhibition.editedBy);
+
+          if (receiver) {
+            await sendPushMessage(
+                mapSenderUser(exhibition.editedBy), mapSenderUser(receiver)
+            );
+            return sendMessage(message);
+          }
+        }
       } else if (status === ExhibitionStatus.DETAILS_CHANGED) {
-        const messagesRef = db
-            .collection("chatRoom")
-            .doc(exhibition.chatRoomId)
-            .collection("messages");
+        if (exhibition.editedBy) {
+          const messagesRef = db
+              .collection("chatRoom")
+              .doc(exhibition.chatRoomId)
+              .collection("messages");
 
-        const messages = await messagesRef
-            .where("payload.receiverStatus", "==", "check_details")
-            .get();
+          const messages = await messagesRef
+              .where("payload.receiverStatus", "==", "check_details")
+              .get();
 
-        messages.forEach((doc) => {
-          messagesRef.doc(doc.id).set(
-              {payload: {receiverStatus: "details_changed"}},
-              {merge: true}
-          );
-        });
+          messages.forEach((doc) => {
+            messagesRef.doc(doc.id).set(
+                {payload: {receiverStatus: "details_changed"}},
+                {merge: true}
+            );
+          });
 
-        const message = <IMessage>{
-          id: generateMessageId(exhibition.chatRoomId).id,
-          type: "action",
-          createdAt: exhibition.editedAt,
-          isRead: false,
-          senderId: exhibition.editedBy,
-          payload: {
-            senderStatus: "waiting_review",
-            receiverStatus: "check_details",
-            exhibitionDetails: {
-              title: exhibition.title,
-              startDate: exhibition.startDate,
-              endDate: exhibition.endDate,
-              artworksCount: exhibition.artworks.length,
+          const message = <IMessage>{
+            id: generateMessageId(exhibition.chatRoomId).id,
+            type: "action",
+            createdAt: exhibition.editedAt,
+            isRead: false,
+            senderId: exhibition.editedBy,
+            payload: {
+              senderStatus: "waiting_review",
+              receiverStatus: "check_details",
+              exhibitionDetails: {
+                title: exhibition.title,
+                startDate: exhibition.startDate,
+                endDate: exhibition.endDate,
+                artworksCount: exhibition.artworks.length,
+              },
             },
-          },
-        };
+          };
 
-        await sendPushMessage();
-        return sendMessage(message);
+          const receiver = members.find((item) => item !== exhibition.editedBy);
+
+          if (receiver) {
+            await sendPushMessage(
+                mapSenderUser(exhibition.editedBy), mapSenderUser(receiver)
+            );
+            return sendMessage(message);
+          }
+        }
       } else if (status === ExhibitionStatus.OPEN) {
         for (let i = 0; i < exhibition.artworks.length; i++) {
           const artwork = exhibition.artworks[i];
@@ -671,24 +709,35 @@ exports.onUpdateExhibition = functions.firestore
               {merge: true}
           );
         });
-        const message = <IMessage>{
-          id: generateMessageId(exhibition.chatRoomId).id,
-          type: "action",
-          createdAt: new Date(),
-          isRead: false,
-          senderId: exhibition.editedBy,
-          payload: {
-            senderStatus: "view_exhibition",
-            receiverStatus: "view_exhibition",
-            exhibitionDetails: {
-              title: exhibition.title,
-              startDate: exhibition.startDate,
-              endDate: exhibition.endDate,
-              artworksCount: exhibition.artworks.length,
+
+        if (exhibition.editedBy) {
+          const message = <IMessage>{
+            id: generateMessageId(exhibition.chatRoomId).id,
+            type: "action",
+            createdAt: new Date(),
+            isRead: false,
+            senderId: exhibition.editedBy,
+            payload: {
+              senderStatus: "view_exhibition",
+              receiverStatus: "view_exhibition",
+              exhibitionDetails: {
+                title: exhibition.title,
+                startDate: exhibition.startDate,
+                endDate: exhibition.endDate,
+                artworksCount: exhibition.artworks.length,
+              },
             },
-          },
-        };
-        return sendMessage(message);
+          };
+
+          const receiver = members.find((item) => item !== exhibition.editedBy);
+
+          if (receiver) {
+            await sendPushMessage(
+                mapSenderUser(exhibition.editedBy), mapSenderUser(receiver)
+            );
+            return sendMessage(message);
+          }
+        }
       } else if (status === ExhibitionStatus.CLOSED) {
         const messagesRef = db
             .collection("chatRoom")
@@ -706,24 +755,34 @@ exports.onUpdateExhibition = functions.firestore
               {merge: true}
           );
         });
-        const message = <IMessage>{
-          id: generateMessageId(exhibition.chatRoomId).id,
-          type: "action",
-          createdAt: new Date(),
-          isRead: false,
-          senderId: exhibition.editedBy,
-          payload: {
-            senderStatus: "closed",
-            receiverStatus: "closed",
-            exhibitionDetails: {
-              title: exhibition.title,
-              startDate: exhibition.startDate,
-              endDate: exhibition.endDate,
-              artworksCount: exhibition.artworks.length,
+
+        if (exhibition.editedBy) {
+          const message = <IMessage>{
+            id: generateMessageId(exhibition.chatRoomId).id,
+            type: "action",
+            createdAt: new Date(),
+            isRead: false,
+            senderId: exhibition.editedBy,
+            payload: {
+              senderStatus: "closed",
+              receiverStatus: "closed",
+              exhibitionDetails: {
+                title: exhibition.title,
+                startDate: exhibition.startDate,
+                endDate: exhibition.endDate,
+                artworksCount: exhibition.artworks.length,
+              },
             },
-          },
-        };
-        return sendMessage(message);
+          };
+          const receiver = members.find((item) => item !== exhibition.editedBy);
+
+          if (receiver) {
+            await sendPushMessage(
+                mapSenderUser(exhibition.editedBy), mapSenderUser(receiver)
+            );
+            return sendMessage(message);
+          }
+        }
       }
       return;
     });
@@ -822,62 +881,66 @@ exports.onNewMessage = functions.firestore
     .document("chatRoom/{chatRoomId}/messages/{messageId}")
     .onCreate(async (snap, context) => {
       const message = snap.data();
-      const senderId = message.senderId;
-      const chatRoomId = context.params.chatRoomId;
 
-      const chatRoomRef = await db.collection("chatRoom").doc(chatRoomId).get();
-      const chatRoom = chatRoomRef.data();
-      const exhibitionId = chatRoom?.exhibitionId;
+      if (message.type !== "action") {
+        const senderId = message.senderId;
+        const chatRoomId = context.params.chatRoomId;
 
-      const exhibitionRef = await db.collection("exhibitions")
-          .doc(exhibitionId).get();
-      const exhibition = exhibitionRef.data();
+        const chatRoomRef = await db.collection("chatRoom")
+            .doc(chatRoomId).get();
+        const chatRoom = chatRoomRef.data();
+        const exhibitionId = chatRoom?.exhibitionId;
 
-      const recipientUserId = exhibition?.members
+        const exhibitionRef = await db.collection("exhibitions")
+            .doc(exhibitionId).get();
+        const exhibition = exhibitionRef.data();
+
+        const recipientUserId = exhibition?.members
           .find((item: string) => item !== senderId);
-      const recipientUserRef = await db.collection("users")
-          .doc(recipientUserId).get();
-      const recipientUser = recipientUserRef.data();
+        const recipientUserRef = await db.collection("users")
+            .doc(recipientUserId).get();
+        const recipientUser = recipientUserRef.data();
 
-      if (recipientUser) {
-        const mapSenderName = (user: any) => {
-          if (user.role === Roles.ARTIST) {
-            return `${user.firstName} ${user.lastName}`;
-          }
-          if (user.role === Roles.VENUE_MANAGER) {
-            return exhibition?.venue.title || "";
-          }
-          return "";
-        };
-
-        const senderUserRef = await db.collection("users")
-            .doc(senderId).get();
-        const senderUser = senderUserRef.data();
-
-        const fcmToken = recipientUser?.fcmToken;
-
-        if (fcmToken) {
-          const sendNotification: PushNotificationSend = {
-            data: {
-              routeName: "Chat",
-            },
-            notification: {
-              title: "You received a new message",
-              body: "Tap here to check it out!",
-            },
+        if (recipientUser) {
+          const mapSenderName = (user: any) => {
+            if (user.role === Roles.ARTIST) {
+              return `${user.firstName} ${user.lastName}`;
+            }
+            if (user.role === Roles.VENUE_MANAGER) {
+              return exhibition?.venue.title || "";
+            }
+            return "";
           };
 
-          if (exhibition) {
-            const notification: PushNotification = {
-              type: NotificationTypes.MESSAGE,
-              userId: recipientUserId,
-              senderName: mapSenderName(senderUser),
-              createdDate: new Date(),
-              isSeen: false,
+          const senderUserRef = await db.collection("users")
+              .doc(senderId).get();
+          const senderUser = senderUserRef.data();
+
+          const fcmToken = recipientUser?.fcmToken;
+
+          if (fcmToken) {
+            const sendNotification: PushNotificationSend = {
+              data: {
+                routeName: "Chat",
+              },
+              notification: {
+                title: "You received a new message",
+                body: "Tap here to check it out!",
+              },
             };
 
-            await sendPushNotification(fcmToken, sendNotification);
-            await db.collection("notifications").doc().set(notification);
+            if (exhibition) {
+              const notification: PushNotification = {
+                type: NotificationTypes.MESSAGE,
+                userId: recipientUserId,
+                senderName: mapSenderName(senderUser),
+                createdDate: new Date(),
+                isSeen: false,
+              };
+
+              await sendPushNotification(fcmToken, sendNotification);
+              await db.collection("notifications").doc().set(notification);
+            }
           }
         }
       }
