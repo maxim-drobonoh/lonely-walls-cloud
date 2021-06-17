@@ -352,9 +352,9 @@ exports.onCreateExhibition = functions.firestore
               .collection("users")
               .doc(recipientUserId).get();
 
-          const fcmToken = recipientUser.data()?.fcmToken;
+          const userData = recipientUser.data();
 
-          if (fcmToken) {
+          if (userData?.fcmToken && userData?.notifications.exhibitions) {
             const sendNotification: PushNotificationSend = {
               data: {
                 routeName: "Chat",
@@ -364,20 +364,19 @@ exports.onCreateExhibition = functions.firestore
                 body: "Tap here to check it out!",
               },
             };
-
-            const notification: PushNotificationRequestExhibition = {
-              status: exhibition.status,
-              image: exhibition.artworks[0]?.images[0]?.url || null,
-              userId: recipientUserId,
-              senderName: exhibition.venue.title,
-              type: NotificationTypes.REQUEST_EXHIBITION,
-              createdDate: new Date(),
-              isSeen: false,
-            };
-
-            await sendPushNotification(fcmToken, sendNotification);
-            await db.collection("notifications").doc().set(notification);
+            await sendPushNotification(userData.fcmToken, sendNotification);
           }
+
+          const notification: PushNotificationRequestExhibition = {
+            status: exhibition.status,
+            image: exhibition.artworks[0]?.images[0]?.url || null,
+            userId: recipientUserId,
+            senderName: exhibition.venue.title,
+            type: NotificationTypes.REQUEST_EXHIBITION,
+            createdDate: new Date(),
+            isSeen: false,
+          };
+          await db.collection("notifications").doc().set(notification);
         }
       }
     });
@@ -441,16 +440,16 @@ exports.onUpdateExhibition = functions.firestore
           senderUser: any,
           recepientUser: any
       ) => {
-        // Артист принял запрос, отправить уведомление Венью
-        // Венью принял запрос, отправить уведомление Артист
-        // if (_receiverUserId) {
-        const sendNotification: PushNotificationSend = {
-          notification: {
-            title: "You received a new message",
-            body: "Tap here to check it out!",
-          },
-        };
+        if (recepientUser?.notifications.exhibitions) {
+          const sendNotification: PushNotificationSend = {
+            notification: {
+              title: "You received a new message",
+              body: "Tap here to check it out!",
+            },
+          };
 
+          await sendPushNotification(recepientUser.fcmToken, sendNotification);
+        }
         const notification: PushNotificationChangeStatusExhibition = {
           status: status,
           type: NotificationTypes.MESSAGE,
@@ -459,11 +458,7 @@ exports.onUpdateExhibition = functions.firestore
           createdDate: new Date(),
           isSeen: false,
         };
-
-        await sendPushNotification(recepientUser.fcmToken, sendNotification);
         await db.collection("notifications").doc().set(notification);
-        // }
-        // return null;
       };
 
       if (status === ExhibitionStatus.ACCEPTED) {
@@ -856,28 +851,27 @@ exports.soldArtwork = functions.firestore
 
         if (userId) {
           const user = await db.collection("users").doc(userId).get();
-          const fcmToken = user.data()?.fcmToken;
+          const userData = user.data();
 
-          if (fcmToken) {
+          if (userData?.fcmToken && userData?.notifications.purchases) {
             const sendNotification: PushNotificationSend = {
               notification: {
                 title: "Artwork sold",
                 body: "Tap here to check it out!",
               },
             };
-
-            const notification: PushNotificationSold = {
-              userId,
-              senderName: order?.buyerName,
-              image: order?.image,
-              type: NotificationTypes.PURCHASE,
-              createdDate: new Date(),
-              isSeen: false,
-            };
-
-            await sendPushNotification(fcmToken, sendNotification);
-            await db.collection("notifications").doc().set(notification);
+            await sendPushNotification(userData.fcmToken, sendNotification);
           }
+
+          const notification: PushNotificationSold = {
+            userId,
+            senderName: order?.buyerName,
+            image: order?.image,
+            type: NotificationTypes.PURCHASE,
+            createdDate: new Date(),
+            isSeen: false,
+          };
+          await db.collection("notifications").doc().set(notification);
         }
       }
     });
@@ -922,9 +916,8 @@ exports.onNewMessage = functions.firestore
               .doc(senderId).get();
           const senderUser = senderUserRef.data();
 
-          const fcmToken = recipientUser?.fcmToken;
-
-          if (fcmToken) {
+          if (recipientUser?.fcmToken &&
+              recipientUser?.notifications.messages) {
             const sendNotification: PushNotificationSend = {
               data: {
                 routeName: "Chat",
@@ -935,19 +928,17 @@ exports.onNewMessage = functions.firestore
               },
             };
 
-            if (exhibition) {
-              const notification: PushNotification = {
-                type: NotificationTypes.MESSAGE,
-                userId: recipientUserId,
-                senderName: mapSenderName(senderUser),
-                createdDate: new Date(),
-                isSeen: false,
-              };
-
-              await sendPushNotification(fcmToken, sendNotification);
-              await db.collection("notifications").doc().set(notification);
-            }
+            await sendPushNotification(recipientUser?.fcmToken,
+                sendNotification);
           }
+          const notification: PushNotification = {
+            type: NotificationTypes.MESSAGE,
+            userId: recipientUserId,
+            senderName: mapSenderName(senderUser),
+            createdDate: new Date(),
+            isSeen: false,
+          };
+          await db.collection("notifications").doc().set(notification);
         }
       }
     });
