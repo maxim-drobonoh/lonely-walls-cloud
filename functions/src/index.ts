@@ -65,7 +65,9 @@ interface Artwork {
     userId: string,
     shopify: Shopify
     images: Image[],
-    venue?: Venue
+    exhibition: Exhibition,
+    orderStatus: number
+    // venue?: Venue
 }
 
 interface Shopify {
@@ -120,9 +122,67 @@ const mapArtwork = (
     price: doc.price,
     frame: doc.frame,
     shopify: doc.shopify,
-    venue: doc.venue,
+    exhibition: doc.exhibition || null,
+    orderStatus: doc.orderStatus,
+    // venue: doc.venue,
   };
 };
+
+
+exports.scheduledFunctionCheckExhibitionExpired =
+    functions.pubsub.schedule("5 1").onRun(async () => {
+      const closeOutdatedExhibitions = async () => {
+        const exhibitions = await fetchExhibitions();
+        const outdatedExhibitions = exhibitions.filter((exhibition) => {
+          // @ts-ignore
+          const exhibitionDate = exhibition.endDate?.seconds;
+          const now = Date.now() / 1000;
+          return exhibitionDate < now;
+        });
+        for (let i = 0; i < outdatedExhibitions.length; i++) {
+          await closeExhibition(outdatedExhibitions[i].id);
+          const {artworks} = outdatedExhibitions[i];
+          for (let j = 0; j < artworks.length; j++) {
+            await updateArtwork(artworks[j].id);
+          }
+        }
+      };
+
+      const fetchExhibitions = async () => {
+        const allExhibitions: Exhibition[] = [];
+        const querySnapshot = await db.collection("exhibitions").get();
+        querySnapshot.forEach((documentSnapshot) => {
+          allExhibitions.push(documentSnapshot.data() as Exhibition);
+        });
+        return allExhibitions;
+      };
+      const closeExhibition = async (id: string) => {
+        await db.collection("exhibitions").doc(id).update({
+          status: ExhibitionStatus.CLOSED,
+        });
+      };
+      const updateArtwork = async (id: string | undefined) => {
+        if (id) {
+          const artwork = await fetchArtwork(id);
+          if (artwork?.status !== ArtworkStatus.SOLD) {
+            await makeArtworkAvailable(id);
+          }
+        }
+      };
+      const fetchArtwork = async (id: string) => {
+        const documentSnapshot = await db.collection("artworks").doc(id).get();
+        if (documentSnapshot.exists) return documentSnapshot.data();
+        return null;
+      };
+      const makeArtworkAvailable = async (id: string) => {
+        await db.collection("artworks").doc(id).update({
+          status: ArtworkStatus.AVAILABLE,
+          exhibition: null,
+        });
+      };
+
+      await closeOutdatedExhibitions();
+    });
 
 // Add Artwork
 exports.addArtwork = functions.firestore
@@ -683,7 +743,8 @@ exports.onUpdateExhibition = functions.firestore
           if (artwork?.id) {
             await db.collection("artworks").doc(artwork.id).update({
               status: ArtworkStatus.EXHIBITED,
-              venue: exhibition.venue,
+              exhibition,
+              // venue: exhibition.venue,
             });
           }
         }
