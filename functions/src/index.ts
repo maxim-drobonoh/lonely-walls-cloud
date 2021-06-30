@@ -1,5 +1,7 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
+import {elasticsearch} from "./config";
+
 const createAwsElasticsearchConnector = require("aws-elasticsearch-connector");
 
 const {Client} = require("@elastic/elasticsearch");
@@ -8,22 +10,20 @@ admin.initializeApp();
 
 const db = admin.firestore();
 const AWS = require("aws-sdk");
-const env = functions.config();
-const AWS_REGION = "eu-central-1";
+const AWS_REGION = elasticsearch.region;
 
 AWS.config.region = AWS_REGION;
-
 AWS.config.update({
   credentials: new AWS.Credentials(
-      env.elasticsearch.keyid,
-      env.elasticsearch.secretkey
+      elasticsearch.keyid,
+      elasticsearch.secretkey
   ),
   region: AWS_REGION,
 });
 
 const client = new Client({
   ...createAwsElasticsearchConnector(AWS.config),
-  node: env.elasticsearch.url,
+  node: elasticsearch.url,
 });
 
 enum Roles {
@@ -200,7 +200,7 @@ exports.addArtwork = functions.firestore
 exports.updateArtwork = functions.firestore
     .document("artworks/{artworkId}")
     .onUpdate(async (snap) => {
-      const {after}= snap;
+      const {after} = snap;
       await client.index({
         index: "artworks",
         type: "_doc",
@@ -210,7 +210,7 @@ exports.updateArtwork = functions.firestore
     });
 
 // Delete Artwork
-exports.deleteArtwork= functions.firestore
+exports.deleteArtwork = functions.firestore
     .document("artworks/{artworkId}")
     .onDelete(async (snap) => {
       await client.delete({
@@ -361,7 +361,7 @@ exports.onCreateExhibition = functions.firestore
           snap.data()
       );
 
-      if ( exhibition.status === ExhibitionStatus.REQUESTED) {
+      if (exhibition.status === ExhibitionStatus.REQUESTED) {
         const chatRoomRef = createChatRoomRef();
         const chat = {
           exhibitionId: exhibition.id,
@@ -534,16 +534,18 @@ exports.onUpdateExhibition = functions.firestore
 
         messages.forEach((doc) => {
           messagesRef.doc(doc.id).set(
-              {payload: {
-                receiverStatus: "request_accepted",
-                senderStatus: "request_accepted",
-                exhibitionDetails: {
-                  title: exhibition.title,
-                  startDate: exhibition.startDate,
-                  endDate: exhibition.endDate,
-                  artworksCount: exhibition.artworks.length,
+              {
+                payload: {
+                  receiverStatus: "request_accepted",
+                  senderStatus: "request_accepted",
+                  exhibitionDetails: {
+                    title: exhibition.title,
+                    startDate: exhibition.startDate,
+                    endDate: exhibition.endDate,
+                    artworksCount: exhibition.artworks.length,
+                  },
                 },
-              }},
+              },
               {merge: true}
           );
         });
@@ -568,7 +570,7 @@ exports.onUpdateExhibition = functions.firestore
 
         await sendMessage(message);
         await sendPushMessage(_receiverUser, _creatorUser);
-      } else if ( status === ExhibitionStatus.CANCELED) {
+      } else if (status === ExhibitionStatus.CANCELED) {
         const messagesRef = db
             .collection("chatRoom")
             .doc(exhibition.chatRoomId)
@@ -581,21 +583,23 @@ exports.onUpdateExhibition = functions.firestore
 
         messages.forEach((doc) => {
           messagesRef.doc(doc.id).set(
-              {payload: {
-                senderStatus: "request_canceled",
-                receiverStatus: "request_canceled",
-                exhibitionDetails: {
-                  title: exhibition.title,
-                  startDate: exhibition.startDate,
-                  endDate: exhibition.endDate,
-                  artworksCount: exhibition.artworks.length,
+              {
+                payload: {
+                  senderStatus: "request_canceled",
+                  receiverStatus: "request_canceled",
+                  exhibitionDetails: {
+                    title: exhibition.title,
+                    startDate: exhibition.startDate,
+                    endDate: exhibition.endDate,
+                    artworksCount: exhibition.artworks.length,
+                  },
                 },
-              }},
+              },
               {merge: true}
           );
         });
         await sendPushMessage(_creatorUser, _receiverUser);
-      } else if ( status === ExhibitionStatus.DECLINED) {
+      } else if (status === ExhibitionStatus.DECLINED) {
         const messagesRef = db
             .collection("chatRoom")
             .doc(exhibition.chatRoomId)
@@ -608,16 +612,18 @@ exports.onUpdateExhibition = functions.firestore
 
         messages.forEach((doc) => {
           messagesRef.doc(doc.id).set(
-              {payload: {
-                senderStatus: "request_declined",
-                receiverStatus: "request_declined",
-              }},
+              {
+                payload: {
+                  senderStatus: "request_declined",
+                  receiverStatus: "request_declined",
+                },
+              },
               {merge: true}
           );
         });
 
         await sendPushMessage(_receiverUser, _creatorUser);
-      } else if ( status === ExhibitionStatus.REVIEW) {
+      } else if (status === ExhibitionStatus.REVIEW) {
         if (exhibition.editedBy) {
           const message = <IMessage>{
             id: generateMessageId(exhibition.chatRoomId).id,
@@ -847,7 +853,7 @@ exports.onUpdateExhibition = functions.firestore
 // Push notification
 interface PushNotificationSend {
     data?: {
-      routeName: string
+        routeName: string
     },
     notification: {
         title: string,
@@ -868,7 +874,7 @@ interface PushNotificationSold extends PushNotification {
     image: string
 }
 
-interface PushNotificationRequestExhibition extends PushNotification{
+interface PushNotificationRequestExhibition extends PushNotification {
     status: ExhibitionStatus
     image: string | null
 }
@@ -891,7 +897,7 @@ const sendPushNotification =
 // Push sold artwork
 exports.soldArtwork = functions.firestore
     .document("orders/{userId}/orders/{orderId}")
-    .onWrite( async (snap) => {
+    .onWrite(async (snap) => {
       const order = snap.after.data();
       const artworks = order?.artworkIds;
 
@@ -951,7 +957,7 @@ exports.onNewMessage = functions.firestore
         const exhibition = exhibitionRef.data();
 
         const recipientUserId = exhibition?.members
-          .find((item: string) => item !== senderId);
+                .find((item: string) => item !== senderId);
         const recipientUserRef = await db.collection("users")
             .doc(recipientUserId).get();
         const recipientUser = recipientUserRef.data();
